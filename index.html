@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Bus Roma Live</title>
+  <meta name="description" content="Mappa in tempo reale di bus e tram ATAC a Roma, con fermate, prossimi passaggi e calcolo del percorso.">
+  <meta name="theme-color" content="#8E1537">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="map" aria-label="Mappa di Roma con i mezzi pubblici"></div>
+
+  <!-- Barra di ricerca in alto -->
+  <header class="top">
+    <div class="search card" id="search">
+      <div class="brand" title="Bus Roma Live"><span class="brand-dot"></span></div>
+      <div class="fields">
+        <div class="field from-field" id="fromRow" hidden>
+          <span class="pin pin-from"></span>
+          <input id="fromInput" type="text" autocomplete="off" placeholder="Partenza" aria-label="Partenza">
+        </div>
+        <div class="field">
+          <span class="pin pin-to" id="toPin" hidden></span>
+          <input id="toInput" type="text" autocomplete="off" placeholder="Dove vuoi andare?" aria-label="Destinazione">
+        </div>
+      </div>
+      <button class="icon-btn" id="clearSearch" hidden aria-label="Annulla ricerca">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <ul class="suggest card" id="suggest" hidden role="listbox"></ul>
+
+    <div class="chips">
+      <button class="chip" id="lineChip">
+        <svg viewBox="0 0 24 24"><path d="M5 16V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v9M5 12h14M7 19v1M17 19v1M5 16h14v3H5z"/></svg>
+        <span id="lineChipText">Linea</span>
+      </button>
+      <div class="status chip" id="status" aria-live="polite">
+        <span class="status-dot"></span><span id="statusText">Avvio…</span>
+      </div>
+    </div>
+    <form class="line-form card" id="lineForm" hidden>
+      <input id="lineInput" type="text" inputmode="text" autocomplete="off" placeholder="Numero linea, es. 64" aria-label="Numero linea">
+      <button type="submit" class="btn">Mostra</button>
+    </form>
+  </header>
+
+  <!-- Pulsanti laterali -->
+  <div class="fabs">
+    <button class="fab" id="locateBtn" aria-label="La mia posizione" title="La mia posizione">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+    </button>
+    <button class="fab" id="stopsBtn" aria-pressed="true" aria-label="Mostra fermate" title="Fermate">
+      <svg viewBox="0 0 24 24"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>
+    </button>
+    <button class="fab" id="infoBtn" aria-label="Informazioni" title="Informazioni">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+    </button>
+  </div>
+
+  <!-- Pannello in basso (o a sinistra su schermi grandi) -->
+  <section class="sheet" id="sheet" hidden aria-live="polite">
+    <div class="sheet-handle" id="sheetHandle"></div>
+    <button class="icon-btn sheet-close" id="sheetClose" aria-label="Chiudi">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="sheet-body" id="sheetBody"></div>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="config.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

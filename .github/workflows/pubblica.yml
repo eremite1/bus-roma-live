@@ -1,0 +1,63 @@
+name: Aggiorna dati e pubblica il sito
+
+on:
+  schedule:
+    - cron: '17 2 * * *'   # ogni notte verso le 3-4 (ora italiana): nuovi orari ATAC
+  push:
+    branches: [main]       # ogni modifica al codice ripubblica il sito
+  workflow_dispatch:        # pulsante "Run workflow" per avviarlo a mano
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pubblica
+  cancel-in-progress: false
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Scarica gli orari ATAC e prepara i dati
+        # Di notte (o a mano) rifà sempre i dati; dopo una modifica al codice solo se mancano.
+        if: github.event_name != 'push' || hashFiles('data/trips.json') == ''
+        continue-on-error: true   # se Roma Mobilità non risponde, si tengono i dati del giorno prima
+        run: python tools/build_static.py
+
+      - name: Salva i dati nel repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "Nessuna novità nei dati"
+          else
+            git commit -m "Dati ATAC aggiornati $(date -u +%Y-%m-%d)"
+            git pull --rebase
+            git push
+          fi
+
+      - name: Prepara il sito
+        run: |
+          mkdir -p _site
+          cp -r index.html config.js css js data _site/
+          [ -f favicon.svg ] && cp favicon.svg _site/ || true
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
