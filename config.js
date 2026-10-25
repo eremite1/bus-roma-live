@@ -5,7 +5,7 @@ window.CONFIG = {
   // Indirizzo del "ponte" Cloudflare che legge i dati GPS di ATAC.
   // Lascialo vuoto ('') finché non l'hai creato: la mappa userà le posizioni stimate.
   // Esempio:  PROXY_URL: 'https://bus-roma.tuonome.workers.dev',
-  PROXY_URL: '',
+  PROXY_URL: 'https://bus-roma.ciabbro.workers.dev',
 
   // Ogni quanti secondi aggiornare le posizioni GPS (non scendere sotto 10).
   REFRESH_SECONDS: 20, // ATAC aggiorna i GPS circa ogni 60 secondi
