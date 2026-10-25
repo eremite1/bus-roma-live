@@ -7,10 +7,21 @@
 //   https://<nome-del-tuo-worker>.workers.dev/trips      -> previsioni di arrivo
 //   https://<nome-del-tuo-worker>.workers.dev/alerts     -> avvisi
 
+// Indirizzi ufficiali da https://romamobilita.it/sistemi-e-tecnologie/open-data/
+// (il secondo di ogni lista è un vecchio indirizzo, usato solo se il primo non risponde)
 const FEEDS = {
-  vehicles: 'https://romamobilita.it/sites/default/files/rome_gtfs_rt_vehicle_positions.pb',
-  trips: 'https://romamobilita.it/sites/default/files/rome_gtfs_rt_trip_updates.pb',
-  alerts: 'https://romamobilita.it/sites/default/files/rome_gtfs_rt_alerts.pb',
+  vehicles: [
+    'https://romamobilita.it/sites/default/files/rome_rtgtfs_vehicle_positions_feed.pb',
+    'https://romamobilita.it/sites/default/files/rome_gtfs_rt_vehicle_positions.pb',
+  ],
+  trips: [
+    'https://romamobilita.it/sites/default/files/rome_rtgtfs_trip_updates_feed.pb',
+    'https://romamobilita.it/sites/default/files/rome_gtfs_rt_trip_updates.pb',
+  ],
+  alerts: [
+    'https://romamobilita.it/sites/default/files/rome_rtgtfs_service_alerts_feed.pb',
+    'https://romamobilita.it/sites/default/files/rome_gtfs_rt_alerts.pb',
+  ],
 };
 
 const CORS = {
@@ -25,8 +36,7 @@ export default {
 
     const url = new URL(request.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, '') || 'vehicles';
-    const upstream = FEEDS[name];
-    if (!upstream) {
+    if (!FEEDS[name]) {
       return new Response('Usa /vehicles, /trips oppure /alerts', { status: 404, headers: CORS });
     }
 
@@ -37,21 +47,20 @@ export default {
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
-    let res;
-    try {
-      res = await fetch(upstream, {
-        headers: { 'User-Agent': 'bus-roma-live (progetto personale non commerciale)' },
-        cf: { cacheTtl: 0 },
-      });
-    } catch (e) {
-      return new Response('Roma Mobilità non raggiungibile: ' + e, { status: 502, headers: CORS });
+    let res = null, lastError = '';
+    for (const upstream of FEEDS[name]) {
+      try {
+        const r = await fetch(upstream, {
+          headers: { 'User-Agent': 'bus-roma-live (progetto personale non commerciale)' },
+          cf: { cacheTtl: 0 },
+        });
+        if (r.ok) { res = r; break; }
+        lastError = 'Roma Mobilità ha risposto ' + r.status;
+      } catch (e) {
+        lastError = 'Roma Mobilità non raggiungibile: ' + e;
+      }
     }
-    if (!res.ok) {
-      return new Response('Roma Mobilità ha risposto ' + res.status, {
-        status: 502,
-        headers: { ...CORS, 'X-Upstream-Status': String(res.status) },
-      });
-    }
+    if (!res) return new Response(lastError, { status: 502, headers: CORS });
 
     const body = await res.arrayBuffer();
     const out = new Response(body, {

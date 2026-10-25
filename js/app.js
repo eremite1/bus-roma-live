@@ -86,7 +86,7 @@ map.touchZoomRotate.disableRotation();
 window.__busMap = map; // utile per le prove automatiche
 map.addControl(new maplibregl.AttributionControl({
   compact: true,
-  customAttribution: 'Dati ATAC: <a href="https://romamobilita.it/it/tecnologie/open-data" target="_blank" rel="noopener">Roma Mobilità</a> · Percorsi: <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transitous</a>',
+  customAttribution: 'Dati ATAC: <a href="https://romamobilita.it/sistemi-e-tecnologie/open-data/" target="_blank" rel="noopener">Roma Mobilità</a> · Percorsi: <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transitous</a>',
 }), 'bottom-left');
 
 const S = 2; // le immagini sono disegnate a doppia risoluzione per schermi nitidi
@@ -1140,7 +1140,7 @@ $('infoBtn').onclick = () => {
       ? 'GPS reali dei mezzi ATAC, aggiornati ogni ' + (C.REFRESH_SECONDS || 15) + ' secondi (i dati di ATAC possono avere 1-2 minuti di ritardo).'
       : 'stimate da orari e ritardi in tempo reale. Per vedere le posizioni GPS reali va attivato il "ponte" (vedi le istruzioni nel repository).'}</p>
     <p><b>Percorsi, fermate e passaggi:</b> <a href="https://transitous.org" target="_blank" rel="noopener">Transitous</a>, servizio libero e gratuito che usa i dati in tempo reale di ATAC, Cotral e Trenitalia.</p>
-    <p><b>Dati ATAC:</b> <a href="https://romamobilita.it/it/tecnologie/open-data" target="_blank" rel="noopener">Roma Servizi per la Mobilità</a> (open data). Ultimo aggiornamento linee e orari: ${esc(upd)}.</p>
+    <p><b>Dati ATAC:</b> <a href="https://romamobilita.it/sistemi-e-tecnologie/open-data/" target="_blank" rel="noopener">Roma Servizi per la Mobilità</a> (open data). Ultimo aggiornamento linee e orari: ${esc(upd)}.</p>
     <p><b>Mappa:</b> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
     <p class="muted">Progetto personale non commerciale, senza legami con ATAC o Roma Mobilità.</p>
   </div>`, { type: 'info' });

@@ -63,7 +63,7 @@ Il piano gratuito di Cloudflare permette 100.000 richieste al giorno: per uso pe
 
 ## Fonti dei dati
 
-- Orari e GPS ATAC: [Roma Servizi per la Mobilità — Open Data](https://romamobilita.it/it/tecnologie/open-data)
+- Orari e GPS ATAC: [Roma Servizi per la Mobilità — Open Data](https://romamobilita.it/sistemi-e-tecnologie/open-data/)
 - Percorsi, passaggi in tempo reale, posizioni stimate: [Transitous](https://transitous.org) (servizio comunitario, uso non commerciale)
 - Mappa: © [OpenStreetMap](https://www.openstreetmap.org/copyright), [OpenFreeMap](https://openfreemap.org), [MapLibre](https://maplibre.org)
 

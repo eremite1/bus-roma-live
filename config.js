@@ -8,7 +8,7 @@ window.CONFIG = {
   PROXY_URL: '',
 
   // Ogni quanti secondi aggiornare le posizioni GPS (non scendere sotto 10).
-  REFRESH_SECONDS: 15,
+  REFRESH_SECONDS: 20, // ATAC aggiorna i GPS circa ogni 60 secondi
 
   // Centro e zoom iniziale della mappa (Roma).
   CENTER: [12.4964, 41.9028],
