@@ -89,28 +89,83 @@ map.addControl(new maplibregl.AttributionControl({
   customAttribution: 'Dati ATAC: <a href="https://romamobilita.it/it/tecnologie/open-data" target="_blank" rel="noopener">Roma Mobilità</a> · Percorsi: <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transitous</a>',
 }), 'bottom-left');
 
-function makeArrow(color) {
-  // freccia che sta "sopra" il pallino del mezzo; viene ruotata nella direzione di marcia
-  const S = 2, W = 44 * S, c = document.createElement('canvas');
-  c.width = c.height = W;
+const S = 2; // le immagini sono disegnate a doppia risoluzione per schermi nitidi
+function canvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w * S; c.height = h * S;
   const g = c.getContext('2d');
-  g.fillStyle = color;
-  g.strokeStyle = '#fff';
-  g.lineWidth = 2 * S;
-  g.lineJoin = 'round';
+  g.scale(S, S);
+  return [c, g];
+}
+const imageOf = (c) => ({ width: c.width, height: c.height, data: c.getContext('2d').getImageData(0, 0, c.width, c.height).data });
+
+// freccia di direzione: sta fuori dal simbolo del mezzo e viene ruotata nel verso di marcia
+function makeArrow(color, size, tipY, baseY, half) {
+  const [c, g] = canvas(size, size);
+  g.fillStyle = color; g.strokeStyle = '#fff'; g.lineWidth = 2; g.lineJoin = 'round';
   g.beginPath();
-  g.moveTo(W / 2, 2 * S);
-  g.lineTo(W / 2 + 7 * S, 11.5 * S);
-  g.lineTo(W / 2 - 7 * S, 11.5 * S);
-  g.closePath();
-  g.stroke();
-  g.fill();
-  return { width: W, height: W, data: g.getImageData(0, 0, W, W).data };
+  g.moveTo(size / 2, tipY); g.lineTo(size / 2 + half, baseY); g.lineTo(size / 2 - half, baseY);
+  g.closePath(); g.stroke(); g.fill();
+  return imageOf(c);
+}
+
+// icona del mezzo (vista dal davanti) su quadratino colorato
+function makeVehicleIcon(kind, color, highlight) {
+  const W = 30;
+  const [c, g] = canvas(W, W);
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+  rr(2, 2, W - 4, W - 4, 8);
+  g.fillStyle = color; g.fill();
+  g.lineWidth = highlight ? 2.6 : 2; g.strokeStyle = highlight ? '#1B1D22' : '#fff'; g.stroke();
+  g.fillStyle = '#fff'; g.strokeStyle = '#fff';
+  if (kind === 'metro') {
+    g.font = '800 15px Figtree, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('M', W / 2, W / 2 + 1);
+    return imageOf(c);
+  }
+  const train = kind === 'rail', tram = kind === 'tram';
+  const top = tram ? 10 : 8;
+  // carrozzeria
+  rr(9, top, 12, 23 - top, train ? [5, 5, 2, 2] : 2.5); g.fill();
+  // ruote
+  rr(10, 22.5, 2.6, 2.5, 0.8); g.fill();
+  rr(17.4, 22.5, 2.6, 2.5, 0.8); g.fill();
+  // parabrezza e fari (nel colore della linea)
+  g.fillStyle = color;
+  rr(10.6, top + 2, 8.8, train ? 5 : 5.5, 1.2); g.fill();
+  g.beginPath(); g.arc(12, 20.2, 1.05, 0, 7); g.arc(18, 20.2, 1.05, 0, 7); g.fill();
+  g.fillStyle = '#fff';
+  if (tram) {
+    // pantografo
+    g.lineWidth = 1.3; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(12.5, top); g.lineTo(15, 6.2); g.lineTo(17.5, top); g.stroke();
+    g.beginPath(); g.moveTo(12.2, 5.6); g.lineTo(17.8, 5.6); g.stroke();
+  } else if (!train) {
+    // specchietti
+    g.lineWidth = 1.2; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(9, top + 3); g.lineTo(7.6, top + 4.6); g.moveTo(21, top + 3); g.lineTo(22.4, top + 4.6); g.stroke();
+  }
+  return imageOf(c);
+}
+
+// etichetta colorata con il numero di linea (si allarga in base al testo)
+function makePill(color) {
+  const [c, g] = canvas(20, 18);
+  g.beginPath(); g.roundRect(1, 1, 18, 16, 6);
+  g.fillStyle = color; g.fill(); g.lineWidth = 1.6; g.strokeStyle = '#fff'; g.stroke();
+  return imageOf(c);
 }
 
 function setupLayers() {
-  for (const [k, col] of Object.entries(PALETTE)) map.addImage('arrow-' + k, makeArrow(col), { pixelRatio: 2 });
-  map.addImage('arrow-hl', makeArrow('#F2B33D'), { pixelRatio: 2 });
+  for (const [k, col] of Object.entries(PALETTE)) {
+    map.addImage('arrow-' + k, makeArrow(col, 44, 2, 11.5, 7), { pixelRatio: S });
+    map.addImage('arrowL-' + k, makeArrow(col, 64, 1.5, 9.5, 6), { pixelRatio: S });
+    map.addImage('veh-' + k, makeVehicleIcon(k, col, false), { pixelRatio: S });
+    map.addImage('veh-' + k + '-hl', makeVehicleIcon(k, col, true), { pixelRatio: S });
+    map.addImage('pill-' + k, makePill(col), { pixelRatio: S, stretchX: [[7 * S, 13 * S]], stretchY: [[7 * S, 11 * S]], content: [5 * S, 3 * S, 15 * S, 15 * S] });
+  }
+  map.addImage('arrow-hl', makeArrow('#F2B33D', 44, 2, 11.5, 7), { pixelRatio: S });
+  map.addImage('arrowL-hl', makeArrow('#F2B33D', 64, 1.5, 9.5, 6), { pixelRatio: S });
 
   const font = ['Noto Sans Bold'];
   map.addSource('route', { type: 'geojson', data: EMPTY });
@@ -158,25 +213,43 @@ function setupLayers() {
   // mezzi
   const dim = ['case', ['==', ['get', 'dim'], 1], 0.22, 1];
   map.addLayer({ id: 'veh-halo', type: 'circle', source: 'veh', filter: ['==', ['get', 'hl'], 1],
-    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 9, 12.5, 16, 16, 22], 'circle-color': '#F2B33D', 'circle-opacity': 0.42, 'circle-blur': 0.15 } });
-  map.addLayer({ id: 'veh-arrow', type: 'symbol', source: 'veh', minzoom: 12.5, filter: ['>=', ['get', 'b'], 0],
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 9, 12.5, 16, 14, 19, 17, 26], 'circle-color': '#F2B33D', 'circle-opacity': 0.42, 'circle-blur': 0.15 } });
+  // da lontano: pallini (con numero da zoom 12,5); da vicino (zoom 14+): icone di bus/tram/metro
+  const ICON_Z = 14;
+  map.addLayer({ id: 'veh-arrow', type: 'symbol', source: 'veh', minzoom: 12.5, maxzoom: ICON_Z, filter: ['>=', ['get', 'b'], 0],
     layout: { 'icon-image': ['case', ['==', ['get', 'hl'], 1], 'arrow-hl', ['concat', 'arrow-', ['get', 'kind']]],
       'icon-rotate': ['get', 'b'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 0.78, 16, 1.05] },
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 0.78, 14, 0.9] },
     paint: { 'icon-opacity': dim } });
-  map.addLayer({ id: 'veh-dot', type: 'circle', source: 'veh',
+  map.addLayer({ id: 'veh-arrow-l', type: 'symbol', source: 'veh', minzoom: ICON_Z, filter: ['>=', ['get', 'b'], 0],
+    layout: { 'icon-image': ['case', ['==', ['get', 'hl'], 1], 'arrowL-hl', ['concat', 'arrowL-', ['get', 'kind']]],
+      'icon-rotate': ['get', 'b'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 0.9, 17, 1.1] },
+    paint: { 'icon-opacity': dim } });
+  map.addLayer({ id: 'veh-dot', type: 'circle', source: 'veh', maxzoom: ICON_Z,
     paint: {
-      'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.2, 12, 4, 12.5, 9, 16, 12.5],
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.2, 12, 4, 12.5, 9, 14, 10.5],
       'circle-color': ['get', 'color'],
       'circle-stroke-color': ['case', ['==', ['get', 'hl'], 1], '#1B1D22', '#fff'],
       'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 9, 0.6, 12.5, 2],
       'circle-opacity': dim, 'circle-stroke-opacity': dim,
     } });
-  map.addLayer({ id: 'veh-label', type: 'symbol', source: 'veh', minzoom: 12.5,
+  map.addLayer({ id: 'veh-label', type: 'symbol', source: 'veh', minzoom: 12.5, maxzoom: ICON_Z,
     layout: { 'text-field': ['get', 'line'], 'text-font': font,
-      'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, ['case', ['>', ['length', ['get', 'line']], 3], 7.5, 9.5], 16, ['case', ['>', ['length', ['get', 'line']], 3], 9.5, 12]],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, ['case', ['>', ['length', ['get', 'line']], 3], 7.5, 9.5], 14, ['case', ['>', ['length', ['get', 'line']], 3], 8.5, 10.5]],
       'text-allow-overlap': true, 'text-ignore-placement': true },
     paint: { 'text-color': '#fff', 'text-opacity': dim } });
+  map.addLayer({ id: 'veh-icon', type: 'symbol', source: 'veh', minzoom: ICON_Z,
+    layout: { 'icon-image': ['concat', 'veh-', ['get', 'kind'], ['case', ['==', ['get', 'hl'], 1], '-hl', '']],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 0.9, 17, 1.1],
+      'icon-allow-overlap': true, 'icon-ignore-placement': true },
+    paint: { 'icon-opacity': dim } });
+  map.addLayer({ id: 'veh-pill', type: 'symbol', source: 'veh', minzoom: ICON_Z,
+    layout: { 'text-field': ['get', 'line'], 'text-font': font, 'text-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 10.5, 17, 12.5],
+      'text-anchor': 'top', 'text-offset': ['interpolate', ['linear'], ['zoom'], ICON_Z, ['literal', [0, 1.25]], 17, ['literal', [0, 1.35]]],
+      'icon-image': ['concat', 'pill-', ['get', 'kind']], 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 4, 0, 4],
+      'text-allow-overlap': true, 'text-ignore-placement': true, 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+    paint: { 'text-color': '#fff', 'text-opacity': dim, 'icon-opacity': dim } });
 
   // la mia posizione
   map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 16, 'circle-color': '#2563EB', 'circle-opacity': 0.16 } });
@@ -1092,7 +1165,7 @@ map.on('click', (e) => {
   hideSuggest();
   $('lineForm').hidden = true;
   if (ctxPopup) { ctxPopup.remove(); ctxPopup = null; }
-  const veh = featureAt(e.point, ['veh-dot'], map.getZoom() < 12.5 ? 8 : 14);
+  const veh = featureAt(e.point, ['veh-dot', 'veh-icon', 'veh-pill'], map.getZoom() < 12.5 ? 8 : 16);
   if (veh) {
     const v = vehicleById(veh.properties.id);
     if (v) { showVehicle(v); return; }
@@ -1103,7 +1176,7 @@ map.on('click', (e) => {
   }
 });
 map.on('mousemove', (e) => {
-  const f = featureAt(e.point, ['veh-dot', 'stops-dot'], 8);
+  const f = featureAt(e.point, ['veh-dot', 'veh-icon', 'stops-dot'], 8);
   map.getCanvas().style.cursor = f ? 'pointer' : '';
 });
 
