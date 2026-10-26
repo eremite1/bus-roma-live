@@ -42,13 +42,14 @@ const T64A = () => '20261025_08:00_it-Lazio-Rome_T64A';
 function mapTrips() {
   const now = Date.now();
   const segs = [];
-  const add = (tripId, line, mode, a, b, dep, arr) => segs.push({
+  const add = (tripId, line, mode, a, b, dep, arr, delayMin = 0) => segs.push({
     trips: [{ tripId, displayName: line }], mode, distance: 900, from: { name: STOPS[a][0], lat: STOPS[a][1], lon: STOPS[a][2] },
     to: { name: STOPS[b][0], lat: STOPS[b][1], lon: STOPS[b][2] }, departure: iso(dep), arrival: iso(arr),
-    scheduledDeparture: iso(dep), scheduledArrival: iso(arr), realTime: true, polyline: enc([ll(a), ll(b)], 5),
+    scheduledDeparture: iso(dep - delayMin * 60000), scheduledArrival: iso(arr - delayMin * 60000), realTime: true, polyline: enc([ll(a), ll(b)], 5),
   });
-  add(T64A(), '64', 'BUS', 'S1', 'S2', now - 60000, now + 60000);
-  add(T64A(), '64', 'BUS', 'S2', 'S3', now + 70000, now + 300000);
+  add(T64A(), '64', 'BUS', 'S1', 'S2', now - 60000, now + 60000, 4);
+  add(T64A(), '64', 'BUS', 'S2', 'S3', now + 70000, now + 300000, 4);
+  add('20261025_08:00_it-Lazio-Rome_T64B', '64', 'BUS', 'S5', 'S3', now - 30000, now + 200000, -2);
   add('20261025_08:00_it-Lazio-Rome_T8A', '8', 'TRAM', 'S4', 'S7', now - 100000, now + 200000);
   add('20261025_08:00_it-Lazio-Rome_MA1', 'MA', 'SUBWAY', 'S1', 'S3', now - 50000, now + 100000);
   // tanti altri mezzi finti
@@ -186,6 +187,7 @@ async function main() {
 
   // linea 64
   await page.click('#showLineBtn');
+  await page.waitForSelector('.punct-sum', { timeout: 10000 });
   await wait(1500);
   await shot(page, '04-line-64');
   console.log('route feats:', await page.evaluate(() => { const m = window.__busMap; return JSON.stringify({ z: m.getZoom(), c: m.getCenter(), n: m.querySourceFeatures('route').length }); }));

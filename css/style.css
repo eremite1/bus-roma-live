@@ -263,3 +263,15 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 .maplibregl-ctrl-attrib { font-size: 11px; }
 .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { transition: bottom .25s; }
+
+/* puntualità nella vista linea */
+.punct { display: inline-block; padding: 3px 8px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #fff; }
+.punct.ok { background: #138A4B; }
+.punct.early { background: #2563EB; }
+.punct.late { background: #E07A00; }
+.punct.vlate { background: #C81E1E; }
+.punct.na { background: var(--paper-2); color: var(--ink-3); }
+.punct-sum { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: #138A4B; margin: 0 0 4px; }
+.punct-sum .late-t { color: #C2410C; }
+.punct-sum .early-t { color: #2563EB; }
+.punct-sum b { font-size: 17px; }

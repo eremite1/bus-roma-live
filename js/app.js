@@ -164,6 +164,9 @@ function setupLayers() {
     map.addImage('veh-' + k + '-hl', makeVehicleIcon(k, col, true), { pixelRatio: S });
     map.addImage('pill-' + k, makePill(col), { pixelRatio: S, stretchX: [[7 * S, 13 * S]], stretchY: [[7 * S, 11 * S]], content: [5 * S, 3 * S, 15 * S, 15 * S] });
   }
+  for (const [k, st] of Object.entries(STATUS)) {
+    map.addImage('pill-st-' + k, makePill(st.color), { pixelRatio: S, stretchX: [[7 * S, 13 * S]], stretchY: [[7 * S, 11 * S]], content: [5 * S, 3 * S, 15 * S, 15 * S] });
+  }
   map.addImage('arrow-hl', makeArrow('#F2B33D', 44, 2, 11.5, 7), { pixelRatio: S });
   map.addImage('arrowL-hl', makeArrow('#F2B33D', 64, 1.5, 9.5, 6), { pixelRatio: S });
 
@@ -245,9 +248,9 @@ function setupLayers() {
       'icon-allow-overlap': true, 'icon-ignore-placement': true },
     paint: { 'icon-opacity': dim } });
   map.addLayer({ id: 'veh-pill', type: 'symbol', source: 'veh', minzoom: ICON_Z,
-    layout: { 'text-field': ['get', 'line'], 'text-font': font, 'text-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 10.5, 17, 12.5],
+    layout: { 'text-field': ['get', 'tag'], 'text-font': font, 'text-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 10.5, 17, 12.5],
       'text-anchor': 'top', 'text-offset': ['interpolate', ['linear'], ['zoom'], ICON_Z, ['literal', [0, 1.25]], 17, ['literal', [0, 1.35]]],
-      'icon-image': ['concat', 'pill-', ['get', 'kind']], 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 4, 0, 4],
+      'icon-image': ['get', 'pill'], 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 4, 0, 4],
       'text-allow-overlap': true, 'text-ignore-placement': true, 'icon-allow-overlap': true, 'icon-ignore-placement': true },
     paint: { 'text-color': '#fff', 'text-opacity': dim, 'icon-opacity': dim } });
 
@@ -358,14 +361,25 @@ function draw(t = performance.now()) {
     const pos = state.source.kind === 'gps' ? currentPos(s, t) : s.to;
     const inFocus = focus && focus.has(v.tripId);
     const hl = v.id === state.selected || inFocus ? 1 : 0;
+    const kind = kindOf(v);
+    let color = colorOf(v), pill = 'pill-' + kind, tag = String(v.line || '?');
+    if (state.lineFilter) {
+      const info = lineInfo(v);
+      const st = statusOf(info ? info.delay : null);
+      color = STATUS[st].color;
+      pill = 'pill-st-' + st;
+      if (info && info.delay != null) tag += info.delay >= 2 ? ` +${info.delay}′` : info.delay <= -1 ? ` ${info.delay}′` : ' ✓';
+    }
     feats.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: pos },
       properties: {
         id: v.id,
         line: String(v.line || '?'),
-        color: colorOf(v),
-        kind: kindOf(v),
+        color,
+        kind,
+        pill,
+        tag,
         b: v.bearing == null ? -1 : Math.round(v.bearing),
         hl,
         dim: focus && !inFocus && !hl ? 1 : 0,
@@ -665,6 +679,78 @@ function updateTripLive() {
   if (b) b.onclick = () => showPoint([v.lng, v.lat], 15.5);
 }
 
+// ---------------- puntualità ----------------
+const STATUS = {
+  ok: { color: '#138A4B', label: 'In orario' },
+  early: { color: '#2563EB', label: 'In anticipo' },
+  late: { color: '#E07A00', label: 'In ritardo' },
+  vlate: { color: '#C81E1E', label: 'Forte ritardo' },
+  na: { color: '#7A808C', label: 'Dato non disponibile' },
+};
+function statusOf(d) {
+  if (d == null) return 'na';
+  if (d <= -1) return 'early';
+  if (d < 2) return 'ok';
+  if (d < 5) return 'late';
+  return 'vlate';
+}
+function delayWords(d) {
+  if (d == null) return 'puntualità non disponibile';
+  if (d <= -1) return `${-d} min in anticipo`;
+  if (d < 2) return 'in orario';
+  return `${d} min di ritardo`;
+}
+
+// Per ogni corsa della linea: ritardo (minuti), prossima fermata e orario previsto.
+// I dati arrivano da Transitous, che usa le previsioni in tempo reale pubblicate da ATAC.
+async function fetchLineDelays() {
+  const view = state.view;
+  if (view?.type !== 'line') return;
+  const vehicles = [...state.shown.values()].map((x) => x.v).filter(lineMatches);
+  const pts = (view.shapePts || []).concat(vehicles.map((v) => [v.lng, v.lat]));
+  if (!pts.length) return;
+  let w = 180, so = 90, e = -180, n = -90;
+  for (const [x, y] of pts) { w = Math.min(w, x); e = Math.max(e, x); so = Math.min(so, y); n = Math.max(n, y); }
+  const pad = 0.01, now = Date.now();
+  try {
+    const segs = await api.mapTrips({ south: so - pad, north: n + pad, west: w - pad, east: e + pad }, new Date(now - 3 * 60_000), new Date(now + 3 * 60_000));
+    if (state.view !== view) return;
+    const byTrip = new Map();
+    for (const sg of segs) {
+      for (const t of sg.trips || []) {
+        const line = t.displayName || t.routeShortName;
+        if (String(line).toLowerCase() !== view.name.toLowerCase()) continue;
+        const raw = rawTripId(t.tripId);
+        if (!byTrip.has(raw)) byTrip.set(raw, []);
+        byTrip.get(raw).push(sg);
+      }
+    }
+    const delays = new Map();
+    for (const [raw, list] of byTrip) {
+      list.sort((a, b) => Date.parse(a.departure) - Date.parse(b.departure));
+      const t = Date.now();
+      let seg = list.find((x) => Date.parse(x.departure) <= t && Date.parse(x.arrival) >= t);
+      let ms;
+      if (seg) ms = Date.parse(seg.arrival) - Date.parse(seg.scheduledArrival);
+      else {
+        seg = list.find((x) => Date.parse(x.departure) > t) || list[list.length - 1];
+        ms = Date.parse(seg.departure) - Date.parse(seg.scheduledDeparture);
+      }
+      delays.set(raw, {
+        delay: seg.realTime ? Math.round(ms / 60000) : null,
+        nextStop: niceName(seg.to && seg.to.name),
+        nextTime: seg.arrival,
+      });
+    }
+    view.delays = delays;
+    draw();
+    renderLineView();
+  } catch (err) {
+    console.warn('Puntualità non disponibile', err);
+  }
+}
+const lineInfo = (v) => (state.view?.type === 'line' && state.view.delays ? state.view.delays.get(v.tripId) : null);
+
 // ---------------- linea ----------------
 $('lineChip').onclick = () => {
   if (state.lineFilter) { clearLine(); if (state.view?.type === 'line') closeSheet(); return; }
@@ -705,8 +791,12 @@ async function showLine(name) {
   map.getSource('route').setData({ type: 'FeatureCollection', features: feats });
   const pts = feats.length ? feats.flatMap((f) => f.geometry.coordinates) : vehicles.map((v) => [v.lng, v.lat]);
   state.view.shapes = shapes;
+  state.view.shapePts = feats.flatMap((f) => f.geometry.coordinates);
   state.view.color = color;
   renderLineView();
+  fetchLineDelays();
+  clearInterval(state.lineTimer);
+  state.lineTimer = setInterval(fetchLineDelays, 30_000);
   // aspetto che il pannello abbia la sua altezza definitiva, poi inquadro la linea
   if (pts.length) requestAnimationFrame(() => fitTo(pts));
 }
@@ -724,16 +814,45 @@ function renderLineView() {
   }
   for (const s of shapes) if (s.h && !groups.has(s.h)) groups.set(s.h, []);
   const ordered = [...groups.entries()].sort((a, b) => (a[0] === 'Direzione non nota') - (b[0] === 'Direzione non nota'));
+  const delays = state.view.delays;
+  const count = { ok: 0, early: 0, late: 0, vlate: 0, na: 0 };
+  const row = (v) => {
+    const info = lineInfo(v);
+    const d = info ? info.delay : null;
+    const st = statusOf(d);
+    count[st]++;
+    const who = v.source === 'gps' ? 'Vettura ' + esc(v.vehicleNo) : 'Posizione stimata';
+    const nextName = (info && info.nextStop) || v.nextStop || '';
+    const next = nextName ? `→ ${esc(nextName)}` : '';
+    const nextAt = info && info.nextTime && nextName ? `prossima fermata alle ${fmtTime(info.nextTime)}` : '';
+    const dist = [nextAt, state.me ? `a ${fmtDist(distance(state.me, [v.lng, v.lat]))} da te` : ''].filter(Boolean).join(' · ');
+    const when = !delays ? '<span class="muted">…</span>'
+      : d == null ? '<span class="punct na">n.d.</span>'
+      : st === 'ok' ? '<span class="punct ok">In orario</span>'
+      : st === 'early' ? `<span class="punct early">−${-d} min</span>`
+      : `<span class="punct ${st}">+${d} min</span>`;
+    return `<li data-id="${esc(v.id)}">${badge(v.line, delays ? STATUS[st].color : colorOf(v))}
+      <div class="grow"><div class="title">${next || who}</div>
+        <div class="muted">${[next ? who : '', dist].filter(Boolean).join(' · ')}</div></div>
+      <div class="when">${when}</div></li>`;
+  };
   const html = ordered.map(([h, list]) => `
     <div class="section-title">${h === 'Direzione non nota' ? h : 'verso ' + esc(h)} · ${list.length} ${list.length === 1 ? 'mezzo' : 'mezzi'}</div>
-    ${list.length ? `<ul class="rows">${list.map((v) => `<li data-id="${esc(v.id)}">${badge(v.line, colorOf(v))}
-      <div class="grow"><div class="title">${v.source === 'gps' ? 'Vettura ' + esc(v.vehicleNo) : esc(v.nextStop ? 'prossima: ' + v.nextStop : 'Posizione stimata')}</div>
-        ${state.me ? `<div class="muted">a ${fmtDist(distance(state.me, [v.lng, v.lat]))} da te</div>` : ''}</div>
-      <div class="when">${ICON.bus}</div></li>`).join('')}</ul>` : '<p class="muted">Nessun mezzo in viaggio in questa direzione.</p>'}`).join('');
+    ${list.length ? `<ul class="rows">${list.map(row).join('')}</ul>` : '<p class="muted">Nessun mezzo in viaggio in questa direzione.</p>'}`).join('');
+  const summary = vehicles.length && delays ? `<div class="punct-sum">
+      <span><b>${count.ok}</b> in orario</span>
+      <span class="late-t"><b>${count.late + count.vlate}</b> in ritardo</span>
+      <span class="early-t"><b>${count.early}</b> in anticipo</span>
+      ${count.na ? `<span class="muted"><b>${count.na}</b> senza dato</span>` : ''}
+    </div>` : vehicles.length ? '<p class="muted">Calcolo la puntualità…</p>' : '';
   el.innerHTML = `
     <div class="head">${badge(name, color, true)}<h2>Linea ${esc(name)}</h2></div>
     ${!vehicles.length ? '<p class="sub">Nessun mezzo di questa linea in circolazione in questo momento.</p>' : ''}
-    ${html}`;
+    ${summary}
+    ${html}
+    ${vehicles.length ? `<p class="muted" style="margin-top:12px">Sulla mappa: <b style="color:${STATUS.ok.color}">verde</b> in orario,
+      <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
+      <b style="color:${STATUS.early.color}">blu</b> in anticipo, grigio senza dato. Ritardi calcolati sulle previsioni in tempo reale di ATAC; si aggiornano ogni 30 secondi.</p>` : ''}`;
   el.querySelectorAll('li[data-id]').forEach((li) => {
     li.onclick = () => {
       const v = vehicleById(li.dataset.id);
@@ -745,6 +864,7 @@ function renderLineView() {
 }
 function clearLine() {
   state.lineFilter = null;
+  clearInterval(state.lineTimer);
   $('lineChip').classList.remove('active');
   $('lineChipText').textContent = 'Linea';
   map.getSource('route') && map.getSource('route').setData(EMPTY);
