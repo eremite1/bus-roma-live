@@ -19,6 +19,17 @@ class Reader {
     } while (byte & 0x80);
     return result;
   }
+  int32() {
+    // tiene solo i 32 bit bassi: così i numeri negativi (es. -120 secondi) restano esatti
+    let lo = 0, shift = 0, byte;
+    do {
+      if (this.p >= this.b.length) throw new Error('varint oltre la fine');
+      byte = this.b[this.p++];
+      if (shift < 32) lo |= (byte & 0x7f) << shift;
+      shift += 7;
+    } while (byte & 0x80);
+    return lo | 0;
+  }
   float() { const v = this.dv.getFloat32(this.p, true); this.p += 4; return v; }
   double() { const v = this.dv.getFloat64(this.p, true); this.p += 8; return v; }
   bytes() {
@@ -145,4 +156,73 @@ export function decodeVehicleFeed(buffer) {
     } else return false;
   });
   return out;
+}
+
+// ---------- previsioni di arrivo (TripUpdates) ----------
+function stopTimeEvent(r) {
+  return sub(r, (o, f, w) => {
+    if (f === 1 && w === 0) o.delay = r.int32();
+    else if (f === 2 && w === 0) o.time = r.varint();
+    else return false;
+  });
+}
+function stopTimeUpdate(r) {
+  return sub(r, (o, f, w) => {
+    if (f === 1 && w === 0) o.seq = r.varint();
+    else if (f === 2 && w === 2) o.arrival = stopTimeEvent(r);
+    else if (f === 3 && w === 2) o.departure = stopTimeEvent(r);
+    else if (f === 4 && w === 2) o.stopId = r.string();
+    else if (f === 5 && w === 0) o.rel = r.varint();
+    else return false;
+  });
+}
+function tripUpdate(r) {
+  const out = { stops: [] };
+  const len = r.varint(), end = r.p + len;
+  r.each(end, (f, w) => {
+    if (f === 1 && w === 2) out.trip = tripDescriptor(r);
+    else if (f === 2 && w === 2) out.stops.push(stopTimeUpdate(r));
+    else if (f === 3 && w === 2) out.vehicle = vehicleDescriptor(r);
+    else if (f === 4 && w === 0) out.timestamp = r.varint();
+    else if (f === 5 && w === 0) out.delay = r.int32();
+    else return false;
+  });
+  r.p = end;
+  return out;
+}
+
+/**
+ * Decodifica il feed delle previsioni ATAC.
+ * Restituisce [{ tripId, routeId, vehicleId, delay (secondi o null), stopId }],
+ * dove delay è il ritardo alla prossima fermata (o quello generale della corsa).
+ */
+export function decodeTripUpdates(buffer, nowSec = Date.now() / 1000) {
+  const r = new Reader(buffer);
+  const list = [];
+  r.each(r.b.length, (f, w) => {
+    if (f !== 2 || w !== 2) return false;
+    const e = sub(r, (o, ef, ew) => {
+      if (ef === 3 && ew === 2) o.tu = tripUpdate(r);
+      else return false;
+    });
+    const tu = e.tu;
+    if (!tu || !tu.trip) return;
+    // prima fermata non ancora passata che abbia un ritardo
+    let delay = null, stopId = '';
+    const ev = (st) => st.arrival || st.departure;
+    const upcoming = tu.stops.filter((st) => ev(st) && (ev(st).time == null || ev(st).time >= nowSec - 30));
+    for (const st of upcoming.length ? upcoming : tu.stops.slice(-1)) {
+      const x = st.arrival && st.arrival.delay != null ? st.arrival : st.departure;
+      if (x && x.delay != null) { delay = x.delay; stopId = st.stopId || ''; break; }
+    }
+    if (delay == null && tu.delay != null) delay = tu.delay;
+    list.push({
+      tripId: tu.trip.tripId || '',
+      routeId: tu.trip.routeId || '',
+      vehicleId: tu.vehicle ? tu.vehicle.id || '' : '',
+      delay,
+      stopId,
+    });
+  });
+  return list;
 }

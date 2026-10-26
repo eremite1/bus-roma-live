@@ -1,6 +1,7 @@
 // Bus Roma Live — mappa, fermate, linee e calcolo del percorso.
 
 import { api, decodePolyline, rawTripId } from './api.js';
+import { decodeTripUpdates } from './gtfsrt.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -706,6 +707,7 @@ function delayWords(d) {
 async function fetchLineDelays() {
   const view = state.view;
   if (view?.type !== 'line') return;
+  if (PROXY) fetchAtacDelays(view);
   const vehicles = [...state.shown.values()].map((x) => x.v).filter(lineMatches);
   const pts = (view.shapePts || []).concat(vehicles.map((v) => [v.lng, v.lat]));
   if (!pts.length) return;
@@ -749,7 +751,40 @@ async function fetchLineDelays() {
     console.warn('Puntualità non disponibile', err);
   }
 }
-const lineInfo = (v) => (state.view?.type === 'line' && state.view.delays ? state.view.delays.get(v.tripId) : null);
+// Secondo canale: il file delle previsioni pubblicato direttamente da ATAC (tramite il ponte Cloudflare).
+// Serve per i mezzi che Transitous non riesce a collegare a una corsa.
+async function fetchAtacDelays(view) {
+  try {
+    const res = await fetch(PROXY.replace(/\/$/, '') + '/trips', { cache: 'no-store' });
+    if (!res.ok) throw new Error('risposta ' + res.status);
+    const list = decodeTripUpdates(await res.arrayBuffer());
+    if (state.view !== view) return;
+    const byTrip = new Map(), byVehicle = new Map();
+    for (const u of list) {
+      const info = { delay: u.delay == null ? null : Math.round(u.delay / 60), tripId: u.tripId };
+      if (u.tripId) byTrip.set(u.tripId, info);
+      if (u.vehicleId) byVehicle.set(u.vehicleId, info);
+    }
+    view.atac = { byTrip, byVehicle };
+    // i mezzi GPS senza corsa ricevono la corsa dalle previsioni: così si sa anche la direzione
+    if (state.gps) state.gps.tripByVehicle = new Map([...byVehicle].map(([k, x]) => [k, x.tripId]));
+    draw();
+    renderLineView();
+  } catch (err) {
+    console.warn('Previsioni ATAC non disponibili', err);
+  }
+}
+
+function lineInfo(v) {
+  const view = state.view;
+  if (view?.type !== 'line') return null;
+  const tt = view.delays ? view.delays.get(v.tripId) : null;
+  if (tt && tt.delay != null) return tt;
+  const a = view.atac;
+  const at = a && ((v.tripId && a.byTrip.get(v.tripId)) || (v.source === 'gps' && a.byVehicle.get(v.id.slice(1))));
+  if (at && at.delay != null) return { ...(tt || {}), delay: at.delay };
+  return tt || at || null;
+}
 
 // ---------------- linea ----------------
 $('lineChip').onclick = () => {
@@ -814,7 +849,7 @@ function renderLineView() {
   }
   for (const s of shapes) if (s.h && !groups.has(s.h)) groups.set(s.h, []);
   const ordered = [...groups.entries()].sort((a, b) => (a[0] === 'Direzione non nota') - (b[0] === 'Direzione non nota'));
-  const delays = state.view.delays;
+  const delays = state.view.delays || state.view.atac;
   const count = { ok: 0, early: 0, late: 0, vlate: 0, na: 0 };
   const row = (v) => {
     const info = lineInfo(v);

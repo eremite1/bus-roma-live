@@ -131,6 +131,7 @@ async function main() {
         try { return route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: readFileSync(`${VENDOR}/glyphs/${font}/${parts[2]}`) }); } catch { return route.fulfill({ status: 404, body: '' }); }
       }
       if (u.hostname === 'proxy.test') {
+        if (u.pathname.endsWith('/trips')) return route.fulfill({ status: 200, contentType: 'application/x-protobuf', headers: { 'Access-Control-Allow-Origin': '*' }, body: readFileSync(`${DATA}/tu.pb`) });
         feedN++;
         return route.fulfill({ status: 200, contentType: 'application/x-protobuf', headers: { 'Access-Control-Allow-Origin': '*' }, body: readFileSync(`${DATA}/feed${feedN % 2 ? 1 : 2}.pb`) });
       }

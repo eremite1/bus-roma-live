@@ -41,6 +41,8 @@ export class GpsSource {
     for (const v of feed.vehicles) {
       // scarta posizioni vecchie di oltre 10 minuti (mezzo fermo in deposito / GPS spento)
       if (v.timestamp && now - v.timestamp > 600) continue;
+      // se il GPS non dice la corsa, la prendo dalle previsioni ATAC (quando disponibili)
+      if (!v.tripId && this.tripByVehicle && this.tripByVehicle.get(v.id)) v.tripId = this.tripByVehicle.get(v.id);
       const info = v.tripId ? tripInfo(v.tripId) : null;
       const routeId = (info && info.routeId) || v.routeId;
       const route = routeInfo(routeId);

@@ -26,7 +26,13 @@ msg("VehiclePosition", [("trip", 1, F.TYPE_MESSAGE, OPT, "TripDescriptor"), ("po
                         ("timestamp", 5, F.TYPE_UINT64, OPT, None), ("congestion_level", 6, F.TYPE_INT32, OPT, None),
                         ("stop_id", 7, F.TYPE_STRING, OPT, None),
                         ("vehicle", 8, F.TYPE_MESSAGE, OPT, "VehicleDescriptor"), ("occupancy_status", 9, F.TYPE_INT32, OPT, None)])
-msg("TripUpdate", [("trip", 1, F.TYPE_MESSAGE, OPT, "TripDescriptor")])
+msg("StopTimeEvent", [("delay", 1, F.TYPE_INT32, OPT, None), ("time", 2, F.TYPE_INT64, OPT, None), ("uncertainty", 3, F.TYPE_INT32, OPT, None)])
+msg("StopTimeUpdate", [("stop_sequence", 1, F.TYPE_UINT32, OPT, None), ("arrival", 2, F.TYPE_MESSAGE, OPT, "StopTimeEvent"),
+                       ("departure", 3, F.TYPE_MESSAGE, OPT, "StopTimeEvent"), ("stop_id", 4, F.TYPE_STRING, OPT, None),
+                       ("schedule_relationship", 5, F.TYPE_INT32, OPT, None)])
+msg("TripUpdate", [("trip", 1, F.TYPE_MESSAGE, OPT, "TripDescriptor"), ("stop_time_update", 2, F.TYPE_MESSAGE, REP, "StopTimeUpdate"),
+                   ("vehicle", 3, F.TYPE_MESSAGE, OPT, "VehicleDescriptor"), ("timestamp", 4, F.TYPE_UINT64, OPT, None),
+                   ("delay", 5, F.TYPE_INT32, OPT, None)])
 msg("FeedEntity", [("id", 1, F.TYPE_STRING, OPT, None), ("is_deleted", 2, F.TYPE_BOOL, OPT, None),
                    ("trip_update", 3, F.TYPE_MESSAGE, OPT, "TripUpdate"),
                    ("vehicle", 4, F.TYPE_MESSAGE, OPT, "VehiclePosition")])
@@ -58,6 +64,27 @@ def build(vehicles, ts=1793000000):
         vp.stop_id = v.get("stop_id", "")
         vp.vehicle.id = v["id"]; vp.vehicle.label = "L" + v["id"]
         vp.occupancy_status = 1
+    return fm.SerializeToString()
+
+def build_trip_updates(updates, ts):
+    """updates: [{trip_id, route_id, vehicle_id, delay, stops: [(seq, stop_id, time, delay)]}]"""
+    fm = FeedMessage()
+    fm.header.gtfs_realtime_version = "2.0"
+    fm.header.timestamp = ts
+    for i, u in enumerate(updates):
+        e = fm.entity.add(id=f"tu{i}")
+        tu = e.trip_update
+        tu.trip.trip_id = u.get("trip_id", "")
+        if u.get("route_id"): tu.trip.route_id = u["route_id"]
+        if u.get("vehicle_id"): tu.vehicle.id = u["vehicle_id"]
+        if u.get("delay") is not None: tu.delay = u["delay"]
+        tu.timestamp = ts
+        for seq, sid, t, d in u.get("stops", []):
+            st = tu.stop_time_update.add(stop_sequence=seq, stop_id=sid)
+            st.arrival.time = t
+            if d is not None: st.arrival.delay = d
+    # un veicolo misto nello stesso feed (va ignorato)
+    e = fm.entity.add(id="v1"); e.vehicle.position.latitude = 41.9; e.vehicle.position.longitude = 12.5
     return fm.SerializeToString()
 
 if __name__ == "__main__":
