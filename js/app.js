@@ -2,6 +2,7 @@
 
 import { api, decodePolyline, rawTripId } from './api.js';
 import { decodeTripUpdates } from './gtfsrt.js';
+import { initDeviation, openDeviation, setupDeviationLayers } from './deviation.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -254,6 +255,8 @@ function setupLayers() {
       'icon-image': ['get', 'pill'], 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 4, 0, 4],
       'text-allow-overlap': true, 'text-ignore-placement': true, 'icon-allow-overlap': true, 'icon-ignore-placement': true },
     paint: { 'text-color': '#fff', 'text-opacity': dim, 'icon-opacity': dim } });
+
+  setupDeviationLayers(map);
 
   // la mia posizione
   map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 16, 'circle-color': '#2563EB', 'circle-opacity': 0.16 } });
@@ -1390,6 +1393,10 @@ document.addEventListener('visibilitychange', () => {
   // torna sulla pagina dopo un po': aggiorno subito
   if (!document.hidden && state.source && Date.now() - state.lastOk > 20_000) refreshVehicles();
 });
+
+// ---------------- deviazioni ----------------
+initDeviation({ map, state, store, loadShapes, openSheet, sheetBody, toast, fitTo, PROXY });
+$('devBtn').onclick = () => { hideSuggest(); openDeviation(); };
 
 // ---------------- avvio ----------------
 map.on('load', async () => {

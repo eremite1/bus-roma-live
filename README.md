@@ -49,6 +49,25 @@ Il piano gratuito di Cloudflare permette 100.000 richieste al giorno: per uso pe
 
 ---
 
+### 3. Attivare la lettura delle deviazioni (pulsante arancione)
+
+Il pulsante arancione legge la foto del messaggio di deviazione e la disegna sulla mappa.
+Per leggere il messaggio serve un'intelligenza artificiale: la sua "chiave" va messa nel ponte Cloudflare, dove resta segreta.
+
+1. Crea la chiave (una delle due):
+   - **Claude** (Anthropic): https://console.anthropic.com → *API Keys* → *Create Key*. Serve caricare un piccolo credito (minimo 5 $); ogni foto costa circa 1-2 centesimi. Puoi impostare un tetto di spesa mensile.
+   - **Gemini** (Google): https://aistudio.google.com/apikey → *Create API key*. Ha un uso gratuito giornaliero.
+2. Su Cloudflare apri il worker `bus-roma` → **Edit code** → sostituisci tutto il testo con il nuovo `worker/worker.js` → **Deploy**.
+3. Sempre nel worker: **Settings** → **Variables and Secrets** → **Add** → tipo **Secret**:
+   - nome `ANTHROPIC_API_KEY` (per Claude) oppure `GEMINI_API_KEY` (per Gemini)
+   - valore: la chiave copiata al punto 1 → **Deploy**.
+
+Solo la tua mappa (eremite1.github.io) può usare questa funzione.
+
+**Attenzione:** la deviazione disegnata è un aiuto. Fa fede sempre il messaggio ufficiale; usa il telefono solo a mezzo fermo.
+
+---
+
 ## Domande frequenti
 
 **Il sito si aggiorna da solo?** Sì: le posizioni ogni 15 secondi mentre la pagina è aperta; linee e orari ogni notte.
