@@ -3,8 +3,9 @@
 import { api, decodePolyline, rawTripId } from './api.js';
 import { decodeTripUpdates } from './gtfsrt.js';
 import { initDeviation, openDeviation, setupDeviationLayers } from './deviation.js';
+import { initNav, openNavPicker, setupNavLayers, navState } from './nav.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
-import { store, loadRoutes, loadTrips, loadShapes, colorOf, kindOf, niceName, PALETTE } from './data.js';
+import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
 const C = window.CONFIG;
 const params = new URLSearchParams(location.search);
@@ -257,6 +258,7 @@ function setupLayers() {
     paint: { 'text-color': '#fff', 'text-opacity': dim, 'icon-opacity': dim } });
 
   setupDeviationLayers(map);
+  setupNavLayers(map);
 
   // la mia posizione
   map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 16, 'circle-color': '#2563EB', 'circle-opacity': 0.16 } });
@@ -885,12 +887,14 @@ function renderLineView() {
     </div>` : vehicles.length ? '<p class="muted">Calcolo la puntualità…</p>' : '';
   el.innerHTML = `
     <div class="head">${badge(name, color, true)}<h2>Linea ${esc(name)}</h2></div>
+    <div class="actions" style="margin:-4px 0 10px"><button class="btn" id="navLineBtn">Naviga questa linea</button></div>
     ${!vehicles.length ? '<p class="sub">Nessun mezzo di questa linea in circolazione in questo momento.</p>' : ''}
     ${summary}
     ${html}
     ${vehicles.length ? `<p class="muted" style="margin-top:12px">Sulla mappa: <b style="color:${STATUS.ok.color}">verde</b> in orario,
       <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
       <b style="color:${STATUS.early.color}">blu</b> in anticipo, grigio senza dato. Ritardi calcolati sulle previsioni in tempo reale di ATAC; si aggiornano ogni 30 secondi.</p>` : ''}`;
+  document.getElementById('navLineBtn').onclick = () => openNavPicker(name);
   el.querySelectorAll('li[data-id]').forEach((li) => {
     li.onclick = () => {
       const v = vehicleById(li.dataset.id);
@@ -1320,6 +1324,7 @@ function featureAt(point, layers, px = 12) {
 }
 
 map.on('click', (e) => {
+  if (navState()) return;
   hideSuggest();
   $('lineForm').hidden = true;
   if (ctxPopup) { ctxPopup.remove(); ctxPopup = null; }
@@ -1397,6 +1402,10 @@ document.addEventListener('visibilitychange', () => {
 // ---------------- deviazioni ----------------
 initDeviation({ map, state, store, loadShapes, openSheet, sheetBody, toast, fitTo, PROXY });
 $('devBtn').onclick = () => { hideSuggest(); openDeviation(); };
+
+// ---------------- navigatore ----------------
+initNav({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf });
+$('navBtn').onclick = () => { hideSuggest(); openNavPicker(); };
 
 // ---------------- avvio ----------------
 map.on('load', async () => {

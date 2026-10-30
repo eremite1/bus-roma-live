@@ -14,19 +14,25 @@ stops = [
     ("S6", "SAN PIETRO", 41.9022, 12.4567),
     ("S7", "TRASTEVERE/MINISTERO ISTRUZIONE", 41.8838, 12.4692),
     ("S8", "CASALETTO", 41.8690, 12.4430),
+    ("N1", "PIAZZA RISORGIMENTO", 41.9067, 12.4586),
+    ("N2", "COLA DI RIENZO/OTTAVIANO", 41.9072, 12.4625),
+    ("N3", "CICERONE/COLA DI RIENZO", 41.9077, 12.4660),
+    ("N4", "CICERONE/CAVOUR", 41.9040, 12.4672),
+    ("N5", "P.ZA CAVOUR", 41.9045, 12.4710),
 ]
 files = {
     "agency.txt": "agency_id,agency_name,agency_url,agency_timezone\nATAC,ATAC,https://atac.roma.it,Europe/Rome\n",
     "routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type,route_color,route_text_color\n"
-                  "R64,ATAC,64,,3,,\nR8,ATAC,8,,0,,\nR40,ATAC,40,,3,,\nR30,ATAC,30,,3,,\nR87,ATAC,87,,3,,\nR2,ATAC,2,,0,,\nRN1,ATAC,n1,,3,,\nR60,ATAC,60,,3,,\nR714,ATAC,714,,3,,\nR492,ATAC,492,,3,,\nR3,ATAC,3,,0,,\nRC3,ATAC,C3,,3,,\n",
+                  "R64,ATAC,64,,3,,\nR8,ATAC,8,,0,,\nR40,ATAC,40,,3,,\nR30,ATAC,30,,3,,\nR87,ATAC,87,,3,,\nR2,ATAC,2,,0,,\nRN1,ATAC,n1,,3,,\nR60,ATAC,60,,3,,\nR714,ATAC,714,,3,,\nR492,ATAC,492,,3,,\nR3,ATAC,3,,0,,\nRC3,ATAC,C3,,3,,\nR913,ATAC,913,,3,,\n",
     "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" + "".join(f"{a},{b},{c},{d}\n" for a, b, c, d in stops),
     "calendar_dates.txt": "service_id,date,exception_type\n" + "".join(f"FER,{d},1\n" for d in dates) + "OLD,20200101,1\n",
     "trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\n"
-                 "R64,FER,T64A,,0,SH64A\nR64,FER,T64B,,1,SH64B\nR8,FER,T8A,CASALETTO,0,SH8A\nR40,OLD,T40X,,0,\n",
+                 "R64,FER,T64A,,0,SH64A\nR64,FER,T64B,,1,SH64B\nR8,FER,T8A,CASALETTO,0,SH8A\nR40,OLD,T40X,,0,\nR913,FER,T913A,,0,SH913\n",
     "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
                       "T64A,08:00:00,08:00:00,S1,1\nT64A,08:05:00,08:05:00,S2,2\nT64A,08:10:00,08:10:00,S3,3\nT64A,08:14:00,08:14:00,S5,4\nT64A,08:22:00,08:22:00,S6,5\n"
                       "T64B,08:00:00,08:00:00,S6,1\nT64B,08:08:00,08:08:00,S5,2\nT64B,08:12:00,08:12:00,S3,3\nT64B,08:22:00,08:22:00,S1,4\n"
-                      "T8A,08:00:00,08:00:00,S4,1\nT8A,08:08:00,08:08:00,S7,2\nT8A,08:20:00,08:20:00,S8,3\n",
+                      "T8A,08:00:00,08:00:00,S4,1\nT8A,08:08:00,08:08:00,S7,2\nT8A,08:20:00,08:20:00,S8,3\n"
+                      "T913A,08:00:00,08:00:00,N1,1\nT913A,08:02:00,08:02:00,N2,2\nT913A,08:04:00,08:04:00,N3,3\nT913A,08:06:00,08:06:00,N4,4\nT913A,08:08:00,08:08:00,N5,5\n",
 }
 def shape(sid, ids):
     pts = [next(s for s in stops if s[0] == i) for i in ids]
@@ -40,7 +46,7 @@ def shape(sid, ids):
     out.append(f"{sid},{pts[-1][2]},{pts[-1][3]},{seq}\n")
     return "".join(out)
 files["shapes.txt"] = "shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n" + shape("SH64A", ["S1","S2","S3","S5","S6"]) + \
-    shape("SH64B", ["S6","S5","S3","S1"]) + shape("SH8A", ["S4","S7","S8"])
+    shape("SH64B", ["S6","S5","S3","S1"]) + shape("SH8A", ["S4","S7","S8"]) + shape("SH913", ["N1","N2","N3","N4","N5"])
 
 buf = io.BytesIO()
 with zipfile.ZipFile(buf, "w") as z:

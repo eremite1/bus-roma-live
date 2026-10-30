@@ -172,7 +172,13 @@ def main():
         raise SystemExit("Nessuna corsa attiva trovata: il GTFS potrebbe essere scaduto.")
 
     # --- fermate e ultima fermata di ogni corsa (per sapere il capolinea) ---
-    stop_names = {s["stop_id"]: s.get("stop_name", "") for s in rows(z, "stops.txt")}
+    stop_names, stop_pos = {}, {}
+    for s_ in rows(z, "stops.txt"):
+        stop_names[s_["stop_id"]] = s_.get("stop_name", "")
+        try:
+            stop_pos[s_["stop_id"]] = (round(float(s_["stop_lon"]), 6), round(float(s_["stop_lat"]), 6))
+        except (KeyError, ValueError):
+            pass
     last_stop = {}
     for st in rows(z, "stop_times.txt"):
         tid = st.get("trip_id")
@@ -214,6 +220,7 @@ def main():
     compact = {}
     shape_use = defaultdict(Counter)  # (route, direzione) -> conteggio shape
     shape_head = {}
+    shape_trip = {}  # una corsa "tipo" per ogni percorso (serve per l'elenco delle fermate)
     for tid, t in trips.items():
         h = t.get("trip_headsign") or ""
         if not h and tid in last_stop:
@@ -230,6 +237,7 @@ def main():
         if sid:
             shape_use[(t["route_id"], d)][sid] += 1
             shape_head[sid] = h
+            shape_trip.setdefault(sid, tid)
 
     # --- percorsi: per ogni linea e direzione teniamo il percorso più usato ---
     wanted = {}
@@ -249,6 +257,22 @@ def main():
         shapes[rid].append({"d": d, "h": shape_head.get(sid, ""), "p": encode_polyline(line)})
     log("Percorsi:", sum(len(v) for v in shapes.values()))
 
+    # --- fermate in ordine per ogni linea e direzione (per il navigatore) ---
+    rep_trips = {shape_trip[sid]: sid for sid in wanted if sid in shape_trip}
+    seqs = defaultdict(list)
+    for st in rows(z, "stop_times.txt"):
+        tid = st.get("trip_id")
+        if tid in rep_trips:
+            seqs[tid].append((int(st.get("stop_sequence") or 0), st.get("stop_id")))
+    linestops = defaultdict(list)
+    for tid, lst in seqs.items():
+        lst.sort()
+        sid = rep_trips[tid]
+        rid, d = wanted[sid]
+        stops_out = [[*stop_pos[x], nice(stop_names.get(x, ""))] for _, x in lst if x in stop_pos]
+        linestops[rid].append({"d": d, "h": shape_head.get(sid, ""), "s": stops_out})
+    log("Fermate per linea:", sum(len(v) for v in linestops.values()))
+
     used_routes = {rid: routes[rid] for rid in route_ids}
     # aggiungiamo anche le linee senza corse oggi (per riconoscere il numero dal codice linea)
     for rid, r in routes.items():
@@ -263,6 +287,7 @@ def main():
     dump("routes.json", used_routes)
     dump("trips.json", {"routes": route_ids, "headsigns": headsigns, "trips": compact})
     dump("shapes.json", shapes)
+    dump("linestops.json", linestops)
     dump("meta.json", {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": source,

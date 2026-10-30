@@ -8,6 +8,7 @@
 
 import { decodePolyline } from './api.js';
 import { distance } from './vehicles.js';
+import { speak, isMuted, setMuted as setVoiceMuted } from './voice.js';
 
 let C = null; // strumenti della mappa passati da app.js
 export function initDeviation(ctx) { C = ctx; }
@@ -43,19 +44,7 @@ function loadSaved() {
   } catch (e) { return []; }
 }
 function saveAll(list) { try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); } catch (e) { /* memoria piena o bloccata */ } }
-let muted = (() => { try { return localStorage.getItem('voce') === 'off'; } catch (e) { return false; } })();
-function setMuted(v) { muted = v; try { localStorage.setItem('voce', v ? 'off' : 'on'); } catch (e) { /* ok */ } if (v) speechSynthesis?.cancel(); }
-
-export function speak(text) {
-  if (muted || !('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'it-IT';
-  const voice = speechSynthesis.getVoices().find((v) => v.lang && v.lang.startsWith('it'));
-  if (voice) u.voice = voice;
-  u.rate = 1;
-  speechSynthesis.speak(u);
-}
+let muted = isMuted();
 
 // ---------------- schermata iniziale ----------------
 let current = null; // deviazione in lavorazione { dev, linea, testo, result }
@@ -450,6 +439,7 @@ function showResult() {
   const shapes = lineShapes(cur.linea);
   const route = C.map.getSource('route');
   if (route) route.setData({ type: 'FeatureCollection', features: shapes.map((sh) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: sh.pts }, properties: { color: '#8A8F99', op: 0.55 } })) });
+  muted = isMuted();
   const lines = instructions(cur);
   C.openSheet(`
     <div class="head"><span class="badge big" style="background:${DEV_COLOR}">${esc(cur.linea || '!')}</span>
@@ -467,7 +457,7 @@ function showResult() {
     </div>
   `, { type: 'dev' });
   document.getElementById('devSpeak').onclick = () => { if (!muted) speak(lines.join('. ')); };
-  document.getElementById('devMute').onclick = () => { setMuted(!muted); showResult(); };
+  document.getElementById('devMute').onclick = () => { muted = !muted; setVoiceMuted(muted); showResult(); };
   document.getElementById('devEdit').onclick = () => showReview();
   document.getElementById('devNew').onclick = () => { current = null; openDeviation(); };
   const pts = r.coords.length ? r.coords : r.marks.map((m) => m.p);

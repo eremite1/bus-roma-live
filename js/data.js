@@ -5,6 +5,7 @@ export const store = {
   routeByName: new Map(), // "64" -> route_id
   trips: null,       // { routes:[], headsigns:[], trips:{ id: [routeIdx, headsignIdx, dir] } }
   shapes: null,      // route_id -> [{ d, h, p }]
+  linestops: null,   // route_id -> [{ d, h, s: [[lon, lat, nome], ...] }]
   meta: null,
 };
 
@@ -42,6 +43,14 @@ export function loadShapes() {
     shapesPromise = getJSON('data/shapes.json').then((s) => (store.shapes = s)).catch(() => (store.shapes = {}));
   }
   return shapesPromise;
+}
+
+let stopsPromise = null;
+export function loadLineStops() {
+  if (!stopsPromise) {
+    stopsPromise = getJSON('data/linestops.json').then((s) => (store.linestops = s)).catch(() => (store.linestops = {}));
+  }
+  return stopsPromise;
 }
 
 export function tripInfo(rawId) {

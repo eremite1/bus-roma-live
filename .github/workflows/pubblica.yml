@@ -32,7 +32,7 @@ jobs:
 
       - name: Scarica gli orari ATAC e prepara i dati
         # Di notte (o a mano) rifà sempre i dati; dopo una modifica al codice solo se mancano.
-        if: github.event_name != 'push' || hashFiles('data/trips.json') == ''
+        if: github.event_name != 'push' || hashFiles('data/trips.json') == '' || hashFiles('data/linestops.json') == ''
         continue-on-error: true   # se Roma Mobilità non risponde, si tengono i dati del giorno prima
         run: python tools/build_static.py
 
