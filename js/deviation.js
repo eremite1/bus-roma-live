@@ -149,7 +149,10 @@ async function readMessage({ image, text, linea }) {
     current = { id: 'd' + Date.now(), linea: linea || data.linea || '', testo: data.testo || text, dev: normalize(data), quando: Date.now() };
     showReview();
   } catch (e) {
-    st.innerHTML = `<p class="late">Non sono riuscito a leggere il messaggio: ${esc(e.message)}</p>`;
+    const msg = e instanceof TypeError
+      ? 'il ponte Cloudflare non risponde a questa funzione: va aggiornato con il nuovo programma e la chiave AI (istruzioni nel README, sezione 3).'
+      : e.message;
+    st.innerHTML = `<p class="late">Non sono riuscito a leggere il messaggio: ${esc(msg)}</p>`;
     document.getElementById('devRead').disabled = false;
   }
 }
