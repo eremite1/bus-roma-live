@@ -68,6 +68,17 @@ Solo la tua mappa (eremite1.github.io) può usare questa funzione.
 
 ---
 
+### 4. Attivare il traffico reale e i tempi della "Limitata" (TomTom, gratuito)
+
+1. Vai su https://developer.tomtom.com e registrati (gratis, senza carta di credito).
+2. Nella tua dashboard apri **Keys**: c'è già una chiave ("My first API key"). Copiala.
+3. Su Cloudflare, nel worker `bus-roma`: **Edit code** → incolla il nuovo `worker/worker.js` → **Deploy**.
+4. **Settings** → **Variables and Secrets** → **Add** → tipo **Secret**, nome `TOMTOM_API_KEY`, valore la chiave → **Deploy**.
+
+Il piano gratuito di TomTom basta ampiamente per uso personale. Senza la chiave la mappa mostra solo il traffico ricavato dai bus e la Limitata usa tempi stimati.
+
+---
+
 ## Domande frequenti
 
 **Il sito si aggiorna da solo?** Sì: le posizioni ogni 15 secondi mentre la pagina è aperta; linee e orari ogni notte.

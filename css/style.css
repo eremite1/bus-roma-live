@@ -355,3 +355,8 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .drv-delay .punct { font-size: 15px; padding: 5px 10px; }
 .drv-grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: baseline; font-size: 15px; margin: 6px 0 4px; }
 .drv-k { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 700; }
+
+/* limitata */
+.lim-quick { display: flex; gap: 6px; margin: 4px 0 12px; flex-wrap: wrap; }
+.lim-quick .chip { box-shadow: none; border: 1.5px solid var(--line); }
+.rows li.lim-best { background: #FFF6E3; border-radius: 10px; }

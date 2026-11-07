@@ -38,6 +38,9 @@ export default {
     const url = new URL(request.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, '') || 'vehicles';
     if (name === 'deviazione') return deviazione(request, env);
+    if (name === 'traffico-stato') return new Response(JSON.stringify({ tomtom: !!env.TOMTOM_API_KEY }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
+    if (name.startsWith('traffico/')) return trafficTile(request, env, ctx, name);
+    if (name === 'tempi') return travelTimes(request, env);
     if (!FEEDS[name]) {
       return new Response('Usa /vehicles, /trips, /alerts oppure /deviazione', { status: 404, headers: CORS });
     }
@@ -175,4 +178,54 @@ async function askGemini(env, prompt, image, mediaType) {
   const data = await res.json();
   if (!res.ok) throw new Error((data.error && data.error.message) || 'Gemini ha risposto ' + res.status);
   return data.candidates[0].content.parts.map((p) => p.text || '').join('');
+}
+
+// ---------------------------------------------------------------------------
+// TRAFFICO REALE (TomTom) — serve la chiave gratuita TOMTOM_API_KEY come "Secret"
+// ---------------------------------------------------------------------------
+
+// Riquadri della mappa del traffico: /traffico/{z}/{x}/{y}.png  (ricordati per 2 minuti)
+async function trafficTile(request, env, ctx, name) {
+  const origin = request.headers.get('Origin') || '';
+  const headers = { ...CORS, 'Access-Control-Allow-Origin': origin || '*' };
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) return new Response('no', { status: 403, headers });
+  if (!env.TOMTOM_API_KEY) return new Response('Manca TOMTOM_API_KEY', { status: 501, headers });
+  const m = name.match(/^traffico\/(\d+)\/(\d+)\/(\d+)\.png$/);
+  if (!m) return new Response('no', { status: 404, headers });
+  const [, z, x, y] = m;
+  const cacheKey = new Request(new URL(request.url).origin + `/traffico/${z}/${x}/${y}.png`);
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return cached;
+  const res = await fetch(`https://api.tomtom.com/traffic/map/4/tile/flow/relative0/${z}/${x}/${y}.png?key=${env.TOMTOM_API_KEY}&tileSize=256&thickness=10`);
+  if (!res.ok) return new Response('TomTom ha risposto ' + res.status, { status: 502, headers });
+  const out = new Response(await res.arrayBuffer(), { headers: { ...headers, 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=120' } });
+  ctx.waitUntil(caches.default.put(cacheKey, out.clone()));
+  return out;
+}
+
+// Tempi di percorrenza con il traffico attuale tra una serie di punti, in ordine.
+// POST { punti: [[lon, lat], ...] }  ->  { tratti: [{ s: secondi, s0: secondi senza traffico, m: metri }] }
+async function travelTimes(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  const cors = { ...CORS, 'Access-Control-Allow-Origin': origin || '*', 'Content-Type': 'application/json' };
+  const fail = (status, msg) => new Response(JSON.stringify({ errore: msg }), { status, headers: cors });
+  if (request.method !== 'POST') return fail(405, 'Usa POST');
+  if (!ALLOWED_ORIGINS.includes(origin)) return fail(403, 'Origine non autorizzata');
+  if (!env.TOMTOM_API_KEY) return fail(501, 'Manca la chiave TOMTOM_API_KEY sul ponte Cloudflare');
+  let body;
+  try { body = await request.json(); } catch (e) { return fail(400, 'Richiesta non valida'); }
+  const pts = (body.punti || []).filter((p) => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])).slice(0, 140);
+  if (pts.length < 2) return fail(400, 'Servono almeno due punti');
+  const locs = pts.map((p) => `${(+p[1]).toFixed(6)},${(+p[0]).toFixed(6)}`).join(':');
+  const url = `https://api.tomtom.com/routing/1/calculateRoute/${locs}/json?key=${env.TOMTOM_API_KEY}`
+    + '&traffic=true&travelMode=car&routeType=fastest&computeTravelTimeFor=all&routeRepresentation=summaryOnly';
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.routes) return fail(502, (data.error && data.error.description) || 'TomTom ha risposto ' + res.status);
+  const tratti = data.routes[0].legs.map((l) => ({
+    s: l.summary.travelTimeInSeconds,
+    s0: l.summary.noTrafficTravelTimeInSeconds ?? l.summary.travelTimeInSeconds,
+    m: l.summary.lengthInMeters,
+  }));
+  return new Response(JSON.stringify({ tratti }), { headers: cors });
 }

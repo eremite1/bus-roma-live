@@ -5,7 +5,8 @@ import { decodeTripUpdates } from './gtfsrt.js';
 import { initDeviation, openDeviation, setupDeviationLayers } from './deviation.js';
 import { initNav, openNavPicker, setupNavLayers, navState } from './nav.js';
 import { Traffic, setupTrafficLayer } from './traffic.js';
-import { initDriver, openDriver, stopDriver, driverActive, update as updateDriver } from './driver.js';
+import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, update as updateDriver } from './driver.js';
+import { initLimitata, openLimitata } from './limitata.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -269,6 +270,7 @@ function setupLayers() {
   setupNavLayers(map);
   setupTrafficLayer(map, 'veh-halo');
   if (state.trafficOn) map.setLayoutProperty('traffic', 'visibility', 'visible');
+  setupRealTraffic();
 
   // la mia posizione
   map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 16, 'circle-color': '#2563EB', 'circle-opacity': 0.16 } });
@@ -501,6 +503,7 @@ function closeSheet() {
   if (v && (v.type === 'plan' || v.type === 'itin')) clearPlan();
   if (v && v.type === 'line') clearLine();
   if (v && v.type === 'driver') stopDriver();
+  if (v && v.type === 'limitata' && driverActive()) { showDriverPanel(); return; }
   map.getSource('route') && map.getSource('route').setData(EMPTY);
   draw();
   layoutFabs();
@@ -943,11 +946,14 @@ function renderLineView() {
     ${summary}
     ${rows ? `<ul class="rows">${rows}</ul>` : `<p class="sub">Nessun mezzo in viaggio in questa direzione.</p>`}
     ${unknown ? `<p class="muted">${unknown} ${unknown === 1 ? 'mezzo' : 'mezzi'} senza direzione nota (non mostrati).</p>` : ''}
-    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button></div>
+    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button></div>
     ${vehicles.length ? `<p class="muted" style="margin-top:10px"><b style="color:${STATUS.ok.color}">verde</b> in orario,
       <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
       <b style="color:${STATUS.early.color}">blu</b> in anticipo. Aggiornamento ogni 30 secondi.</p>` : ''}`;
   document.getElementById('navLineBtn').onclick = () => openNavPicker(name);
+  document.getElementById('limLineBtn').onclick = async () => {
+    try { const me = await getMe(); openLimitata({ line: name, dir: state.lineDir, pos: me }); } catch (e) { /* già avvisato */ }
+  };
   document.getElementById('lineChange').onsubmit = (e) => {
     e.preventDefault();
     const v = document.getElementById('lineChangeInput').value.trim();
@@ -1475,18 +1481,36 @@ function setTraffic(on) {
   state.trafficOn = on;
   try { localStorage.setItem('traffico', on ? 'on' : 'off'); } catch (e) { /* ok */ }
   $('trafficChip').classList.toggle('active', on);
+  if (map.getLayer('traffic-real')) map.setLayoutProperty('traffic-real', 'visibility', on ? 'visible' : 'none');
   if (map.getLayer('traffic')) {
     map.setLayoutProperty('traffic', 'visibility', on ? 'visible' : 'none');
     if (on) map.getSource('traffic').setData(state.traffic.geojson());
   }
-  if (on) toast(state.source && state.source.kind === 'gps'
-    ? (state.traffic.segs.length ? 'Traffico dalla velocità dei bus (verde, arancio, rosso)' : 'Traffico: i primi dati arrivano in un paio di minuti')
-    : 'Il traffico richiede i GPS reali dei bus');
+  if (on) toast(state.realTraffic ? 'Traffico in tempo reale (TomTom) + velocità dei bus'
+    : state.source && state.source.kind === 'gps'
+      ? (state.traffic.segs.length ? 'Traffico dalla velocità dei bus (verde, arancio, rosso)' : 'Traffico: i primi dati arrivano in un paio di minuti')
+      : 'Il traffico richiede i GPS reali dei bus');
 }
 $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
-  traffic: state.traffic, hasGps: () => !!state.gps });
+  traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
+initLimitata({ map, store, loadShapes, loadLineStops, openSheet, sheetBody, fitTo, PROXY, traffic: state.traffic });
+
+// Traffico reale TomTom (se sul ponte c'è la chiave): riquadri sotto i percorsi, aggiornati ogni 2 minuti
+async function setupRealTraffic() {
+  if (!PROXY) return;
+  try {
+    const st = await (await fetch(PROXY.replace(/\/$/, '') + '/traffico-stato')).json();
+    if (!st.tomtom || map.getSource('traffic-real')) return;
+    const url = () => PROXY.replace(/\/$/, '') + '/traffico/{z}/{x}/{y}.png?t=' + Math.floor(Date.now() / 120000);
+    map.addSource('traffic-real', { type: 'raster', tiles: [url()], tileSize: 256, minzoom: 8, maxzoom: 18 });
+    map.addLayer({ id: 'traffic-real', type: 'raster', source: 'traffic-real', layout: { visibility: state.trafficOn ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 0.8 } }, 'route-casing');
+    state.realTraffic = true;
+    setInterval(() => { const s = map.getSource('traffic-real'); if (s && state.trafficOn) s.setTiles([url()]); }, 120000);
+  } catch (e) { /* ponte senza traffico TomTom */ }
+}
 $('driverChip').onclick = () => { hideSuggest(); if (driverActive()) closeSheet(); else openDriver(); };
 
 // ---------------- navigatore ----------------

@@ -58,6 +58,11 @@ export function stopDriver() {
   C.state.selected = null;
 }
 export const driverActive = () => !!D;
+export function showDriverPanel() {
+  if (!D) return;
+  C.openSheet('<div id="drvView"><div class="spinner">…</div></div>', { type: 'driver' });
+  update();
+}
 
 function onDrag() {
   if (!D) return;
@@ -137,7 +142,7 @@ export async function update() {
   const me = findMe();
   if (!me) {
     D.id = null;
-    if (el()) el().innerHTML = `<h2>Vettura ${esc(D.no)}</h2>
+    if (el() && C.state.view?.type === 'driver') el().innerHTML = `<h2>Vettura ${esc(D.no)}</h2>
       <p class="sub">Non la trovo ancora nei dati GPS di ATAC. Se hai appena acceso il mezzo può volerci un paio di minuti; controlla anche il numero.</p>
       <div class="actions"><button class="btn ghost" id="drvStop">Esci</button></div>`;
     const b = document.getElementById('drvStop');
@@ -193,7 +198,7 @@ export async function update() {
     : tr.firstSlow ? `<b class="late">lento tra ${fmtM(tr.firstSlow.at - myAt)}</b> (≈${Math.round(tr.slowKmh)} km/h)`
     : tr.avg < MEDIUM ? `<b style="color:#E07A00">rallentato</b> nei prossimi 3 km (≈${Math.round(tr.avg)} km/h)`
     : `<b style="color:#2BA84A">scorrevole</b> nei prossimi 3 km (≈${Math.round(tr.avg)} km/h)`;
-  if (!el()) return;
+  if (!el() || C.state.view?.type !== 'driver') return;
   el().innerHTML = `
     <div class="head drv-head">${C.badge(me.line, C.colorOf(me), true)}
       <div><div class="dest"><span class="arrow">verso</span> ${esc(me.headsign || D.head || '')}</div>
@@ -207,6 +212,7 @@ export async function update() {
       <span class="drv-k">Traffico</span><span>${traffic || '—'}</span>
     </div>
     <div class="actions">
+      <button class="btn" id="drvLim">Limitata</button>
       <button class="btn ghost" id="drvMute">${isMuted() ? 'Voce spenta' : 'Voce attiva'}</button>
       <button class="btn ghost" id="drvCenter" ${D.follow ? 'hidden' : ''}>Seguimi</button>
       <button class="btn ghost" id="drvStop">Esci</button>
@@ -214,6 +220,7 @@ export async function update() {
   document.getElementById('drvMute').onclick = () => { setMuted(!isMuted()); update(); };
   document.getElementById('drvCenter').onclick = () => { D.follow = true; update(); };
   document.getElementById('drvStop').onclick = () => C.closeSheet();
+  document.getElementById('drvLim').onclick = () => C.openLimitata({ line: me.line, dir: D.dir, pos: [me.lng, me.lat] });
   if (D.follow) C.showPoint([me.lng, me.lat], 15.5);
 }
 
