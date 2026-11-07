@@ -4,6 +4,8 @@ import { api, decodePolyline, rawTripId } from './api.js';
 import { decodeTripUpdates } from './gtfsrt.js';
 import { initDeviation, openDeviation, setupDeviationLayers } from './deviation.js';
 import { initNav, openNavPicker, setupNavLayers, navState } from './nav.js';
+import { Traffic, setupTrafficLayer } from './traffic.js';
+import { initDriver, openDriver, stopDriver, driverActive, update as updateDriver } from './driver.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -26,6 +28,12 @@ const state = {
   errors: 0,
   timer: null,
   lineFilter: null,       // "64"
+  lineDir: null,          // senso di marcia mostrato (0/1), null = entrambi
+  lineShapes: [],         // percorsi della linea scelta [{ d, h, p, rid }]
+  delays: null,           // ritardi da Transitous (per corsa)
+  atac: null,             // ritardi dal file ATAC (per corsa e per vettura)
+  traffic: new Traffic(),
+  trafficOn: (() => { try { return localStorage.getItem('traffico') === 'on'; } catch (e) { return false; } })(),
   selected: null,         // id del mezzo selezionato
   focusTrips: null,       // Set di id corsa da evidenziare (percorso scelto / corsa aperta)
   me: null,               // [lng, lat]
@@ -259,6 +267,8 @@ function setupLayers() {
 
   setupDeviationLayers(map);
   setupNavLayers(map);
+  setupTrafficLayer(map, 'veh-halo');
+  if (state.trafficOn) map.setLayoutProperty('traffic', 'visibility', 'visible');
 
   // la mia posizione
   map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 16, 'circle-color': '#2563EB', 'circle-opacity': 0.16 } });
@@ -309,6 +319,10 @@ async function refreshVehicles() {
 function applyVehicles(list) {
   state.vehicles = list;
   if (state.source.kind === 'gps') {
+    state.traffic.ingest(list);
+    if (state.trafficOn && map.getSource('traffic')) map.getSource('traffic').setData(state.traffic.geojson());
+  }
+  if (state.source.kind === 'gps') {
     // animazione morbida dalla vecchia alla nuova posizione
     const t = performance.now();
     const shown = new Map();
@@ -352,8 +366,16 @@ setInterval(() => {
   }
 }, 500);
 
-function lineMatches(v) {
-  return !state.lineFilter || String(v.line).toLowerCase() === state.lineFilter.toLowerCase();
+// senso di marcia di un mezzo (0/1), dalla corsa o dal capolinea
+function vDir(v) {
+  if (v.dir === 0 || v.dir === 1) return v.dir;
+  const m = state.lineShapes.find((s) => s.h && v.headsign && s.h === v.headsign);
+  return m ? m.d : null;
+}
+function lineMatches(v, ignoreDir = false) {
+  if (!state.lineFilter) return true;
+  if (String(v.line).toLowerCase() !== state.lineFilter.toLowerCase()) return false;
+  return ignoreDir || state.lineDir == null || vDir(v) === state.lineDir;
 }
 
 function draw(t = performance.now()) {
@@ -459,10 +481,12 @@ async function refreshStops() {
 
 // ---------------- pannello ----------------
 const sheet = $('sheet'), sheetBody = $('sheetBody');
-function openSheet(html, view, { tall = false } = {}) {
+function openSheet(html, view, { tall = false, half = false } = {}) {
   sheetBody.innerHTML = html;
   sheet.hidden = false;
   sheet.classList.toggle('tall', tall);
+  sheet.classList.toggle('half', half);
+  sheet.classList.remove('peek');
   state.view = view;
   sheetBody.scrollTop = 0;
   layoutFabs();
@@ -476,6 +500,7 @@ function closeSheet() {
   clearInterval(state.viewTimer);
   if (v && (v.type === 'plan' || v.type === 'itin')) clearPlan();
   if (v && v.type === 'line') clearLine();
+  if (v && v.type === 'driver') stopDriver();
   map.getSource('route') && map.getSource('route').setData(EMPTY);
   draw();
   layoutFabs();
@@ -491,6 +516,20 @@ function layoutFabs() {
 new ResizeObserver(layoutFabs).observe(sheet);
 window.addEventListener('resize', layoutFabs);
 $('sheetClose').onclick = closeSheet;
+// linguetta: toccala o trascinala per abbassare/alzare il pannello
+function setPeek(on) { sheet.classList.toggle('peek', on); }
+{
+  const handle = $('sheetHandle');
+  let y0 = null;
+  handle.addEventListener('pointerdown', (e) => { y0 = e.clientY; handle.setPointerCapture(e.pointerId); });
+  handle.addEventListener('pointerup', (e) => {
+    if (y0 == null) return;
+    const dy = e.clientY - y0;
+    y0 = null;
+    if (Math.abs(dy) < 8) setPeek(!sheet.classList.contains('peek'));
+    else setPeek(dy > 0);
+  });
+}
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideSuggest(); if (!sheet.hidden) closeSheet(); } });
 
 let toastTimer;
@@ -710,23 +749,23 @@ function delayWords(d) {
 // Per ogni corsa della linea: ritardo (minuti), prossima fermata e orario previsto.
 // I dati arrivano da Transitous, che usa le previsioni in tempo reale pubblicate da ATAC.
 async function fetchLineDelays() {
-  const view = state.view;
-  if (view?.type !== 'line') return;
-  if (PROXY) fetchAtacDelays(view);
-  const vehicles = [...state.shown.values()].map((x) => x.v).filter(lineMatches);
-  const pts = (view.shapePts || []).concat(vehicles.map((v) => [v.lng, v.lat]));
+  const name = state.lineFilter;
+  if (!name) return;
+  if (PROXY) fetchAtacDelays();
+  const vehicles = [...state.shown.values()].map((x) => x.v).filter((v) => lineMatches(v, true));
+  const pts = state.lineShapes.flatMap((sh) => sh.pts || []).concat(vehicles.map((v) => [v.lng, v.lat]));
   if (!pts.length) return;
   let w = 180, so = 90, e = -180, n = -90;
   for (const [x, y] of pts) { w = Math.min(w, x); e = Math.max(e, x); so = Math.min(so, y); n = Math.max(n, y); }
   const pad = 0.01, now = Date.now();
   try {
     const segs = await api.mapTrips({ south: so - pad, north: n + pad, west: w - pad, east: e + pad }, new Date(now - 3 * 60_000), new Date(now + 3 * 60_000));
-    if (state.view !== view) return;
+    if (state.lineFilter !== name) return;
     const byTrip = new Map();
     for (const sg of segs) {
       for (const t of sg.trips || []) {
         const line = t.displayName || t.routeShortName;
-        if (String(line).toLowerCase() !== view.name.toLowerCase()) continue;
+        if (String(line).toLowerCase() !== name.toLowerCase()) continue;
         const raw = rawTripId(t.tripId);
         if (!byTrip.has(raw)) byTrip.set(raw, []);
         byTrip.get(raw).push(sg);
@@ -749,43 +788,43 @@ async function fetchLineDelays() {
         nextTime: seg.arrival,
       });
     }
-    view.delays = delays;
+    state.delays = delays;
     draw();
     renderLineView();
+    updateDriver();
   } catch (err) {
     console.warn('Puntualità non disponibile', err);
   }
 }
 // Secondo canale: il file delle previsioni pubblicato direttamente da ATAC (tramite il ponte Cloudflare).
 // Serve per i mezzi che Transitous non riesce a collegare a una corsa.
-async function fetchAtacDelays(view) {
+async function fetchAtacDelays() {
   try {
     const res = await fetch(PROXY.replace(/\/$/, '') + '/trips', { cache: 'no-store' });
     if (!res.ok) throw new Error('risposta ' + res.status);
     const list = decodeTripUpdates(await res.arrayBuffer());
-    if (state.view !== view) return;
     const byTrip = new Map(), byVehicle = new Map();
     for (const u of list) {
       const info = { delay: u.delay == null ? null : Math.round(u.delay / 60), tripId: u.tripId };
       if (u.tripId) byTrip.set(u.tripId, info);
       if (u.vehicleId) byVehicle.set(u.vehicleId, info);
     }
-    view.atac = { byTrip, byVehicle };
+    state.atac = { byTrip, byVehicle };
     // i mezzi GPS senza corsa ricevono la corsa dalle previsioni: così si sa anche la direzione
     if (state.gps) state.gps.tripByVehicle = new Map([...byVehicle].map(([k, x]) => [k, x.tripId]));
     draw();
     renderLineView();
+    updateDriver();
   } catch (err) {
     console.warn('Previsioni ATAC non disponibili', err);
   }
 }
 
 function lineInfo(v) {
-  const view = state.view;
-  if (view?.type !== 'line') return null;
-  const tt = view.delays ? view.delays.get(v.tripId) : null;
+  if (!state.lineFilter) return null;
+  const tt = state.delays ? state.delays.get(v.tripId) : null;
   if (tt && tt.delay != null) return tt;
-  const a = view.atac;
+  const a = state.atac;
   const at = a && ((v.tripId && a.byTrip.get(v.tripId)) || (v.source === 'gps' && a.byVehicle.get(v.id.slice(1))));
   if (at && at.delay != null) return { ...(tt || {}), delay: at.delay };
   return tt || at || null;
@@ -804,57 +843,66 @@ $('lineForm').onsubmit = (e) => {
   if (v) showLine(v);
 };
 
-async function showLine(name) {
+// Imposta la linea (e il senso di marcia) mostrata sulla mappa
+async function setLine(name, dir = null) {
   name = String(name).trim();
+  const changed = !state.lineFilter || state.lineFilter.toLowerCase() !== name.toLowerCase();
   state.lineFilter = name;
+  if (changed) { state.delays = null; state.lineShapes = []; }
+  $('lineChip').classList.add('active');
+  $('lineChipText').textContent = `Linea ${name} ✕`;
+  await loadShapes();
+  if (state.lineFilter !== name) return;
+  const routeIds = Object.entries(store.routes || {}).filter(([, r]) => String(r.n).toLowerCase() === name.toLowerCase()).map(([id]) => id);
+  state.lineShapes = routeIds.flatMap((rid) => (store.shapes[rid] || []).map((sh) => ({ ...sh, rid, pts: decodePolyline(sh.p, 5) })));
+  if (dir == null && state.lineShapes.length) dir = state.lineShapes[0].d;
+  state.lineDir = dir;
+  drawLineShape();
+  draw();
+  updateStatus();
+  if (changed) {
+    fetchLineDelays();
+    clearInterval(state.lineTimer);
+    state.lineTimer = setInterval(fetchLineDelays, 30_000);
+  }
+}
+function lineColor() {
+  const v = [...state.shown.values()].map((x) => x.v).find((x) => lineMatches(x, true));
+  const r = state.lineShapes[0] && store.routes[state.lineShapes[0].rid];
+  return colorOf(v || { type: r ? r.t : 3, line: state.lineFilter });
+}
+function drawLineShape() {
+  const color = lineColor();
+  const feats = state.lineShapes.filter((sh) => state.lineDir == null || sh.d === state.lineDir)
+    .map((sh) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: sh.pts }, properties: { color, op: 0.9 } }));
+  map.getSource('route') && map.getSource('route').setData({ type: 'FeatureCollection', features: feats });
+  return feats;
+}
+
+async function showLine(name, dir = null) {
+  name = String(name).trim();
   state.selected = null;
   state.focusTrips = null;
   $('lineForm').hidden = true;
   $('lineInput').value = '';
   $('lineInput').blur();
-  $('lineChip').classList.add('active');
-  $('lineChipText').textContent = `Linea ${name} ✕`;
-  draw();
-  updateStatus();
-  openSheet(`<div id="lineView"><div class="spinner">Carico la linea…</div></div>`, { type: 'line', name });
-  await loadShapes();
+  openSheet(`<div id="lineView"><div class="spinner">Carico la linea…</div></div>`, { type: 'line', name }, { half: true });
+  await setLine(name, dir);
   if (state.view?.type !== 'line' || state.view.name !== name) return;
-  const routeIds = Object.entries(store.routes || {}).filter(([, r]) => String(r.n).toLowerCase() === name.toLowerCase()).map(([id]) => id);
-  const feats = [];
-  const shapes = [];
-  for (const rid of routeIds) for (const s of (store.shapes[rid] || [])) shapes.push(s);
-  const vehicles = [...state.shown.values()].map((s) => s.v).filter(lineMatches);
-  const color = colorOf(vehicles[0] || { type: routeIds.length ? store.routes[routeIds[0]].t : 3, line: name });
-  shapes.forEach((s, i) => {
-    feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: decodePolyline(s.p, 5) }, properties: { color, op: i % 2 ? 0.55 : 0.9 } });
-  });
-  map.getSource('route').setData({ type: 'FeatureCollection', features: feats });
-  const pts = feats.length ? feats.flatMap((f) => f.geometry.coordinates) : vehicles.map((v) => [v.lng, v.lat]);
-  state.view.shapes = shapes;
-  state.view.shapePts = feats.flatMap((f) => f.geometry.coordinates);
-  state.view.color = color;
   renderLineView();
-  fetchLineDelays();
-  clearInterval(state.lineTimer);
-  state.lineTimer = setInterval(fetchLineDelays, 30_000);
-  // aspetto che il pannello abbia la sua altezza definitiva, poi inquadro la linea
+  const feats = drawLineShape();
+  const pts = feats.length ? feats.flatMap((f) => f.geometry.coordinates) : [...state.shown.values()].map((x) => x.v).filter(lineMatches).map((v) => [v.lng, v.lat]);
   if (pts.length) requestAnimationFrame(() => fitTo(pts));
 }
 function renderLineView() {
   const el = document.getElementById('lineView');
   if (!el || state.view?.type !== 'line') return;
-  const { name, shapes = [], color = PALETTE.bus } = state.view;
-  const vehicles = [...state.shown.values()].map((s) => s.v).filter(lineMatches);
+  const { name } = state.view;
+  const color = lineColor();
+  const all = [...state.shown.values()].map((s) => s.v).filter((v) => lineMatches(v, true));
+  const vehicles = all.filter((v) => lineMatches(v));
   if (state.me) vehicles.sort((a, b) => distance(state.me, [a.lng, a.lat]) - distance(state.me, [b.lng, b.lat]));
-  const groups = new Map();
-  for (const v of vehicles) {
-    const k = v.headsign || 'Direzione non nota';
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(v);
-  }
-  for (const s of shapes) if (s.h && !groups.has(s.h)) groups.set(s.h, []);
-  const ordered = [...groups.entries()].sort((a, b) => (a[0] === 'Direzione non nota') - (b[0] === 'Direzione non nota'));
-  const delays = state.view.delays || state.view.atac;
+  const delays = state.delays || state.atac;
   const count = { ok: 0, early: 0, late: 0, vlate: 0, na: 0 };
   const row = (v) => {
     const info = lineInfo(v);
@@ -876,9 +924,12 @@ function renderLineView() {
         <div class="muted">${[next ? who : '', dist].filter(Boolean).join(' · ')}</div></div>
       <div class="when">${when}</div></li>`;
   };
-  const html = ordered.map(([h, list]) => `
-    <div class="section-title">${h === 'Direzione non nota' ? h : 'verso ' + esc(h)} · ${list.length} ${list.length === 1 ? 'mezzo' : 'mezzi'}</div>
-    ${list.length ? `<ul class="rows">${list.map(row).join('')}</ul>` : '<p class="muted">Nessun mezzo in viaggio in questa direzione.</p>'}`).join('');
+  const rows = vehicles.map(row).join('');
+  const tabs = state.lineShapes.map((sh) => {
+    const n = all.filter((v) => vDir(v) === sh.d).length;
+    return `<button class="dir-tab${sh.d === state.lineDir ? ' on' : ''}" data-d="${sh.d}">verso <b>${esc(sh.h || 'capolinea')}</b><span>${n}</span></button>`;
+  }).join('');
+  const unknown = all.filter((v) => vDir(v) == null).length;
   const summary = vehicles.length && delays ? `<div class="punct-sum">
       <span><b>${count.ok}</b> in orario</span>
       <span class="late-t"><b>${count.late + count.vlate}</b> in ritardo</span>
@@ -886,15 +937,25 @@ function renderLineView() {
       ${count.na ? `<span class="muted"><b>${count.na}</b> senza dato</span>` : ''}
     </div>` : vehicles.length ? '<p class="muted">Calcolo la puntualità…</p>' : '';
   el.innerHTML = `
-    <div class="head">${badge(name, color, true)}<h2>Linea ${esc(name)}</h2></div>
-    <div class="actions" style="margin:-4px 0 10px"><button class="btn" id="navLineBtn">Naviga questa linea</button></div>
-    ${!vehicles.length ? '<p class="sub">Nessun mezzo di questa linea in circolazione in questo momento.</p>' : ''}
+    <div class="head line-head">${badge(name, color, true)}
+      <form id="lineChange" class="line-change"><input id="lineChangeInput" value="${esc(name)}" aria-label="Cambia linea" autocomplete="off"><button class="btn ghost" type="submit">Cambia</button></form></div>
+    ${tabs ? `<div class="dir-tabs">${tabs}</div>` : ''}
     ${summary}
-    ${html}
-    ${vehicles.length ? `<p class="muted" style="margin-top:12px">Sulla mappa: <b style="color:${STATUS.ok.color}">verde</b> in orario,
+    ${rows ? `<ul class="rows">${rows}</ul>` : `<p class="sub">Nessun mezzo in viaggio in questa direzione.</p>`}
+    ${unknown ? `<p class="muted">${unknown} ${unknown === 1 ? 'mezzo' : 'mezzi'} senza direzione nota (non mostrati).</p>` : ''}
+    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button></div>
+    ${vehicles.length ? `<p class="muted" style="margin-top:10px"><b style="color:${STATUS.ok.color}">verde</b> in orario,
       <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
-      <b style="color:${STATUS.early.color}">blu</b> in anticipo, grigio senza dato. Ritardi calcolati sulle previsioni in tempo reale di ATAC; si aggiornano ogni 30 secondi.</p>` : ''}`;
+      <b style="color:${STATUS.early.color}">blu</b> in anticipo. Aggiornamento ogni 30 secondi.</p>` : ''}`;
   document.getElementById('navLineBtn').onclick = () => openNavPicker(name);
+  document.getElementById('lineChange').onsubmit = (e) => {
+    e.preventDefault();
+    const v = document.getElementById('lineChangeInput').value.trim();
+    if (v && v.toLowerCase() !== name.toLowerCase()) showLine(v);
+  };
+  el.querySelectorAll('.dir-tab').forEach((b) => {
+    b.onclick = () => { state.lineDir = +b.dataset.d; drawLineShape(); draw(); renderLineView(); updateStatus(); };
+  });
   el.querySelectorAll('li[data-id]').forEach((li) => {
     li.onclick = () => {
       const v = vehicleById(li.dataset.id);
@@ -906,6 +967,9 @@ function renderLineView() {
 }
 function clearLine() {
   state.lineFilter = null;
+  state.lineDir = null;
+  state.lineShapes = [];
+  state.delays = null;
   clearInterval(state.lineTimer);
   $('lineChip').classList.remove('active');
   $('lineChipText').textContent = 'Linea';
@@ -1275,6 +1339,7 @@ function updateLiveBoxes() {
 }
 
 function onVehiclesUpdated() {
+  updateDriver();
   if (!state.view) return;
   if (state.view.type === 'itin') updateLiveBoxes();
   else if (state.view.type === 'line') renderLineView();
@@ -1336,6 +1401,8 @@ map.on('click', (e) => {
   const stop = featureAt(e.point, ['stops-dot'], 12);
   if (stop) {
     showStop({ id: stop.properties.id, name: stop.properties.name, code: stop.properties.code, lngLat: stop.geometry.coordinates });
+  } else if (!sheet.hidden && window.innerWidth < 900) {
+    setPeek(true);
   }
 });
 map.on('mousemove', (e) => {
@@ -1402,6 +1469,25 @@ document.addEventListener('visibilitychange', () => {
 // ---------------- deviazioni ----------------
 initDeviation({ map, state, store, loadShapes, openSheet, sheetBody, toast, fitTo, PROXY });
 $('devBtn').onclick = () => { hideSuggest(); openDeviation(); };
+
+// ---------------- traffico e modalità autista ----------------
+function setTraffic(on) {
+  state.trafficOn = on;
+  try { localStorage.setItem('traffico', on ? 'on' : 'off'); } catch (e) { /* ok */ }
+  $('trafficChip').classList.toggle('active', on);
+  if (map.getLayer('traffic')) {
+    map.setLayoutProperty('traffic', 'visibility', on ? 'visible' : 'none');
+    if (on) map.getSource('traffic').setData(state.traffic.geojson());
+  }
+  if (on) toast(state.source && state.source.kind === 'gps'
+    ? (state.traffic.segs.length ? 'Traffico dalla velocità dei bus (verde, arancio, rosso)' : 'Traffico: i primi dati arrivano in un paio di minuti')
+    : 'Il traffico richiede i GPS reali dei bus');
+}
+$('trafficChip').classList.toggle('active', state.trafficOn);
+$('trafficChip').onclick = () => setTraffic(!state.trafficOn);
+initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
+  traffic: state.traffic, hasGps: () => !!state.gps });
+$('driverChip').onclick = () => { hideSuggest(); if (driverActive()) closeSheet(); else openDriver(); };
 
 // ---------------- navigatore ----------------
 initNav({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf });

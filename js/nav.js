@@ -32,7 +32,7 @@ const DIR_TEXT = {
 };
 
 // ---------------- geometria del percorso ----------------
-function buildRoute(coordsIn) {
+export function buildRoute(coordsIn) {
   // punti al massimo ogni 15 m, con distanza progressiva (in metri) dall'inizio
   const coords = [coordsIn[0]], vertex = [true];
   for (let i = 1; i < coordsIn.length; i++) {
