@@ -180,13 +180,17 @@ def main():
         except (KeyError, ValueError):
             pass
     last_stop = {}
+    first_stop = {}  # per le tabelle: orario e fermata di partenza di ogni corsa
     for st in rows(z, "stop_times.txt"):
         tid = st.get("trip_id")
         if tid in trips:
             seq = int(st.get("stop_sequence") or 0)
             cur = last_stop.get(tid)
             if cur is None or seq > cur[0]:
-                last_stop[tid] = (seq, st.get("stop_id"))
+                last_stop[tid] = (seq, st.get("stop_id"), st.get("arrival_time") or st.get("departure_time") or "")
+            cur = first_stop.get(tid)
+            if cur is None or seq < cur[0]:
+                first_stop[tid] = (seq, st.get("stop_id"), st.get("departure_time") or st.get("arrival_time") or "")
 
     small = {"di", "de", "del", "della", "dello", "dei", "degli", "delle", "e", "a", "al", "alla", "ai",
              "da", "dal", "dalla", "in", "su", "sul", "per", "lo", "la", "le", "il", "l'"}
@@ -288,6 +292,25 @@ def main():
     dump("trips.json", {"routes": route_ids, "headsigns": headsigns, "trips": compact})
     dump("shapes.json", shapes)
     dump("linestops.json", linestops)
+
+    # --- tabelle (turni macchina): tutte le corse fatte dallo stesso bus nella giornata di oggi ---
+    # ATAC non usa la colonna block_id: la tabella è la parte del codice corsa prima dell'ultimo "-"
+    # (es. "0#3737-5" -> tabella "0#3737", corsa n. 5).
+    today_services = active_services(z, [today])
+    hm = lambda t: t[:5] if len(t) >= 5 else t
+    blocks = defaultdict(list)
+    for tid, t in trips.items():
+        if t.get("service_id") not in today_services or tid not in first_stop:
+            continue
+        key = t.get("block_id") or (tid.rsplit("-", 1)[0] if "#" in tid and "-" in tid else "")
+        if not key:
+            continue
+        f, l = first_stop[tid], last_stop.get(tid, (0, "", ""))
+        blocks[key].append([tid, hm(f[2]), hm(l[2]), routes[t["route_id"]]["n"], nice(stop_names.get(f[1], "")), nice(stop_names.get(l[1], ""))])
+    for v in blocks.values():
+        v.sort(key=lambda c: c[1].zfill(5))
+    log("Tabelle di oggi:", len(blocks))
+    dump("blocks.json", blocks)
     dump("meta.json", {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": source,
