@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '*/10 * * * *'   # ogni 10 minuti (GitHub a volte ritarda di qualche minuto)
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['tools/collect_rt.py', '.github/workflows/storico.yml']
 
 permissions:
   contents: write
