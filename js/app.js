@@ -13,6 +13,10 @@ import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS }
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
 const C = window.CONFIG;
+// nell'app Android: vibrazione tramite il telefono
+if (window.Android && Android.vibrate) {
+  navigator.vibrate = (p) => { try { Android.vibrate(JSON.stringify([].concat(p))); } catch (e) { /* ok */ } return true; };
+}
 const params = new URLSearchParams(location.search);
 const PROXY = params.get('proxy') || C.PROXY_URL || '';
 const $ = (id) => document.getElementById(id);
@@ -516,7 +520,7 @@ function layoutFabs() {
   const wide = window.innerWidth >= 900;
   const h = !sheet.hidden && !wide ? sheet.offsetHeight : 0;
   fabs.style.bottom = `calc(${h ? h + 12 : 40}px + var(--safe-bottom))`;
-  if (attrib) attrib.style.bottom = h ? h + 'px' : '';
+  if (attrib) { attrib.style.bottom = h ? h + 'px' : ''; attrib.style.display = h > window.innerHeight * 0.45 ? 'none' : ''; }
 }
 new ResizeObserver(layoutFabs).observe(sheet);
 window.addEventListener('resize', layoutFabs);
@@ -1407,8 +1411,12 @@ $('infoBtn').onclick = () => {
     <p><b>Percorsi, fermate e passaggi:</b> <a href="https://transitous.org" target="_blank" rel="noopener">Transitous</a>, servizio libero e gratuito che usa i dati in tempo reale di ATAC, Cotral e Trenitalia.</p>
     <p><b>Dati ATAC:</b> <a href="https://romamobilita.it/sistemi-e-tecnologie/open-data/" target="_blank" rel="noopener">Roma Servizi per la Mobilità</a> (open data). Ultimo aggiornamento linee e orari: ${esc(upd)}.</p>
     <p><b>Mappa:</b> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
+    ${window.Android && Android.appVersion ? `<div class="section-title">App</div><p>Versione <b>${esc(Android.appVersion())}</b></p>
+      <div class="actions" style="margin-top:0"><button class="btn" id="appUpd">Controlla aggiornamenti</button></div>` : ''}
     <p class="muted">Progetto personale non commerciale, senza legami con ATAC o Roma Mobilità.</p>
   </div>`, { type: 'info' });
+  const u = document.getElementById('appUpd');
+  if (u) u.onclick = () => Android.checkUpdate();
 };
 
 // ---------------- clic e pressione lunga sulla mappa ----------------

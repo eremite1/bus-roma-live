@@ -424,6 +424,7 @@ function setNavLayers(on) {
 
 let wakeLock = null;
 async function keepAwake() {
+  if (window.Android && Android.keepAwake) Android.keepAwake(true);
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* non supportato */ }
 }
 document.addEventListener('visibilitychange', () => { if (nav && !document.hidden) keepAwake(); });
@@ -436,6 +437,7 @@ export function stopNav() {
   nav = null;
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   try { wakeLock && wakeLock.release(); } catch (e) { /* ok */ }
+  if (window.Android && Android.keepAwake) Android.keepAwake(false);
   wakeLock = null;
   document.getElementById('nav')?.remove();
   document.body.classList.remove('navigating');

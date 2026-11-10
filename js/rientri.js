@@ -10,6 +10,7 @@ export function initRientri(ctx) { C = ctx; }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const mins = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+const h24 = (t) => String(t).replace(/^(\d+):/, (x, h) => String(+h % 24).padStart(2, '0') + ':');
 const hm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
 const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } return v; };
 
@@ -18,6 +19,7 @@ export const isColl = (line) => /^[A-Z]\d{2}$/.test(String(line || ''));
 const DEPOT_NAMES = { G: 'Grottarossa', M: 'Magliana', P: 'Portonaccio', T: 'Tor Vergata', A: 'Prenestina' };
 
 let blocks = null, depotPlace = {}, lineDepot = {}, names = {};
+const DEPOT_STOPS = new Set();
 async function loadBlocks() {
   if (blocks) return blocks;
   try { blocks = await (await fetch('data/blocks.json', { cache: 'no-cache' })).json(); } catch (e) { blocks = {}; }
@@ -31,7 +33,7 @@ async function loadBlocks() {
     count[L] = count[L] || {};
     for (const p of [t[4], t[5]]) count[L][p] = (count[L][p] || 0) + 1;
   }
-  for (const [L, c] of Object.entries(count)) depotPlace[L] = Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
+  for (const [L, c] of Object.entries(count)) { depotPlace[L] = Object.entries(c).sort((a, b) => b[1] - a[1])[0][0]; DEPOT_STOPS.add(depotPlace[L]); }
   // deposito di ogni linea: dalla lettera dei collegamenti delle sue tabelle
   const votes = {};
   for (const trips of Object.values(blocks)) {
@@ -224,26 +226,40 @@ export async function openTabella(b, highlightTrip) {
   const cur = highlightTrip || (v && v.tripId);
   const runs = runsOf(trips);
   const dep = depotOf(trips, runs[0]);
-  const rowsHtml = [];
+  const up = (x) => String(x || '').toUpperCase();
+  const cells = [];
   trips.forEach((t, i) => {
     const prev = trips[i - 1];
-    if (prev && mins(t[1]) - mins(prev[2]) >= 60) {
-      rowsHtml.push(`<tr class="tb-pause"><td colspan="5">pausa / in deposito dalle ${esc(prev[2])} alle ${esc(t[1])}</td></tr>`);
-    }
-    const coll = isColl(t[3]);
-    rowsHtml.push(`<tr class="${coll ? 'tb-coll' : ''}${t[0] === cur ? ' tb-cur' : ''}">
-      <td class="tb-n">${i + 1}</td><td class="tb-l">${esc(t[3])}</td>
-      <td><b>${esc(t[1])}</b><span>${esc(t[4])}</span></td>
-      <td><b>${esc(t[2])}</b><span>${esc(t[5])}</span></td>
-      <td class="tb-d">${mins(t[2]) - mins(t[1])}′</td></tr>`);
+    if (prev && mins(t[1]) - mins(prev[2]) >= 60) cells.push(`<div class="tb-cell tb-pause">PAUSA ${esc(prev[2])} – ${esc(t[1])}</div>`);
+    const coll = isColl(t[3]) || ((i === 0 || i === trips.length - 1) && DEPOT_STOPS.has(t[i === 0 ? 4 : 5]));
+    const prevColl = prev && (isColl(prev[3]) || (i - 1 === 0 && DEPOT_STOPS.has(prev[4])));
+    const newLine = !prev || prev[3] !== t[3] || !!prevColl !== !!coll;
+    cells.push(`${newLine ? `<div class="tb-line">${esc(t[3])}${coll ? ' <small>collegamento</small>' : ''}</div>` : ''}
+      <div class="tb-cell${coll ? ' tb-coll' : ''}${t[0] === cur ? ' tb-cur' : ''}"><b>${esc(h24(t[1]))} ${esc(up(t[4]))}</b><span>${esc(h24(t[2]))} ${esc(up(t[5]))}</span></div>`);
   });
   const lines = [...new Set(trips.map((t) => t[3]).filter((l) => !isColl(l)))];
+  const name = tabName(b);
+  const m = name.match(/^(.+?)\/(\d+)$/);
+  const first = runs[0], last = runs[runs.length - 1];
+  const svc = trips.filter((t, i) => !(isColl(t[3]) || ((i === 0 || i === trips.length - 1) && DEPOT_STOPS.has(t[i === 0 ? 4 : 5]))));
+  const capAnd = svc.length ? svc[0][4] : first.startPlace, capRit = svc.length ? svc[svc.length - 1][5] : last.endPlace;
+  const outT = first.before ? first.before[1] : trips[0][1];
+  const inT = last.after ? last.after[2] : trips[trips.length - 1][2];
+  const totalMin = trips.reduce((a, t) => a + mins(t[2]) - mins(t[1]), 0);
   C.openSheet(`
-    <div class="head"><span class="badge big" style="background:#1B1D22">${esc(tabName(b).replace(/^Tab\. /, ''))}</span>
-      <div><h2 style="margin:0">Tabella ${esc(tabName(b).replace(/^Tab\. /, ""))}</h2><div class="muted">${esc(lines.join(' › '))}${dep ? ' · ' + esc(depotName(dep)) : ''}${v ? ' · vettura <b>' + esc(v.vehicleNo) + '</b>' : ''}</div></div></div>
-    <div class="facts">${runs.map((r) => `<span>Uscita <b>${esc(r.before ? r.before[1] : r.start)}</b> · rientro <b>${esc(r.after ? r.after[2] : r.end)}</b></span>`).join('')}<span>${trips.length} corse</span></div>
-    <table class="tabella"><thead><tr><th>#</th><th>Linea</th><th>Partenza</th><th>Arrivo</th><th></th></tr></thead><tbody>${rowsHtml.join('')}</tbody></table>
-    <p class="muted">In corsivo i collegamenti col deposito. Orari ufficiali ATAC di oggi.</p>
+    <div class="tb-sheet">
+      <div class="tb-box">
+        <div class="tb-title">${m ? `Tab. N° <big>${esc(m[2])}</big> Linea <big>${esc(m[1])}</big>` : `<big>${esc(name)}</big> · Linea <big>${esc(lines.join(' › '))}</big>`} ${dep ? `<span class="tb-dep">${esc(dep)}</span>` : ''}</div>
+        <div class="tb-grid">
+          <span>Cap. And.: <b>${esc(up(capAnd))}</b></span><span>Cap. Rit.: <b>${esc(up(capRit))}</b></span>
+          <span>Dep. appart.: <b>${esc(depotName(dep) || '—')}</b></span><span>${v ? `Vettura: <b>${esc(v.vehicleNo)}</b>` : `Corse: <b>${trips.length}</b>`}</span>
+          <span class="tb-big">Uscita: ${esc(h24(outT))}</span><span class="tb-big">Rientro: ${esc(h24(inT))}</span>
+          <span>Ore di guida in linea: <b>${Math.floor(totalMin / 60)}:${String(totalMin % 60).padStart(2, '0')}</b></span><span>Codice: <b>${esc(b.replace(/^0#/, ''))}</b></span>
+        </div>
+      </div>
+      <div class="tb-cols">${cells.join('')}</div>
+    </div>
+    <p class="muted">Orari ufficiali ATAC di oggi. In grigio i collegamenti col deposito; evidenziata la corsa in corso.</p>
     <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button>${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
   `, { type: 'tabella', b }, { tall: true });
   document.getElementById('tbName').onclick = () => {
@@ -252,7 +268,7 @@ export async function openTabella(b, highlightTrip) {
   };
   const vb = document.getElementById('tbVeh');
   if (vb) vb.onclick = () => { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); };
-  const curRow = document.querySelector('.tabella .tb-cur');
+  const curRow = document.querySelector('.tb-cols .tb-cur');
   if (curRow) setTimeout(() => curRow.scrollIntoView({ block: 'center' }), 100);
 }
 

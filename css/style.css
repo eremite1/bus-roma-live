@@ -396,3 +396,27 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .st .st-v { text-align: right; white-space: nowrap; font-weight: 600; }
 .st-bar { height: 10px; background: var(--paper-2); border-radius: 5px; overflow: hidden; min-width: 60px; }
 .st-bar span { display: block; height: 100%; border-radius: 5px; }
+
+/* tabella in stile foglio ATAC */
+.tb-sheet { background: #fff; border: 1.5px solid #1B1D22; padding: 10px; font-family: 'Arial Narrow', Arial, sans-serif; }
+.tb-box { border: 1.5px solid #1B1D22; padding: 8px 10px; margin-bottom: 10px; }
+.tb-title { font-size: 15px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.tb-title big { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.tb-dep { font-size: 22px; font-weight: 800; }
+.tb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; font-size: 12.5px; margin-top: 4px; color: #333; }
+.tb-grid .tb-big { font-size: 18px; color: #1B1D22; }
+.tb-cols { column-count: 2; column-gap: 0; column-rule: 1.5px solid #1B1D22; border: 1.5px solid #1B1D22; }
+.tb-cell { break-inside: avoid; border-bottom: 1px solid #1B1D22; padding: 4px 6px; font-size: 12.5px; line-height: 1.25; }
+.tb-cell b { display: block; font-size: 13px; }
+.tb-cell span { display: block; color: #333; }
+.tb-cell.tb-coll { background: #EFEFEF; font-style: italic; }
+.tb-cell.tb-cur { background: #FFE9A8; outline: 2px solid #E07A00; outline-offset: -2px; }
+.tb-cell.tb-pause { text-align: center; font-weight: 700; font-size: 11px; background: repeating-linear-gradient(45deg, #fff, #fff 5px, #eee 5px, #eee 10px); }
+.tb-line { break-inside: avoid; font-size: 20px; font-weight: 800; padding: 4px 6px 0; }
+.tb-line small { font-size: 11px; font-weight: 600; color: #666; }
+@media (max-width: 360px) { .tb-cols { column-count: 1; } }
+
+/* pulsanti in alto su una riga sola, scorrevoli col dito */
+.chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 6px; margin: -2px -2px -6px; }
+.chips::-webkit-scrollbar { display: none; }
+.chips .chip { flex: none; }

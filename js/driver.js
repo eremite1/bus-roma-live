@@ -53,6 +53,7 @@ export function stopDriver() {
   document.body.classList.remove('driving');
   C.map.off('dragstart', onDrag);
   try { wakeLock && wakeLock.release(); } catch (e) { /* ok */ }
+  if (window.Android && Android.keepAwake) Android.keepAwake(false);
   wakeLock = null;
   C.clearLine();
   C.state.selected = null;
@@ -226,6 +227,7 @@ export async function update() {
 
 let wakeLock = null;
 async function keepAwake() {
+  if (window.Android && Android.keepAwake) Android.keepAwake(true);
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* non supportato */ }
 }
 document.addEventListener('visibilitychange', () => { if (D && !document.hidden) keepAwake(); });
