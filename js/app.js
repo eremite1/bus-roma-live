@@ -7,7 +7,8 @@ import { initNav, openNavPicker, setupNavLayers, navState } from './nav.js';
 import { Traffic, setupTrafficLayer } from './traffic.js';
 import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, update as updateDriver } from './driver.js';
 import { initLimitata, openLimitata } from './limitata.js';
-import { initRientri, openRientri, onVehicles as rientriUpdate, tabellaText } from './rientri.js';
+import { initStorico, openStorico } from './storico.js';
+import { initRientri, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -704,11 +705,12 @@ async function showTrip(ttTripId, { line, mode, headsign }) {
   openSheet(`
     <div class="head">${badge(line, color, true)}<div class="dest"><span class="arrow">verso</span> ${esc(headsign || '')}</div></div>
     <div id="tripLive"></div>
-    <div class="actions"><button class="btn ghost" id="showLineBtn">${ICON.bus} Tutta la linea ${esc(line)}</button></div>
+    <div class="actions"><button class="btn ghost" id="showLineBtn">${ICON.bus} Tutta la linea ${esc(line)}</button>${blockOf(raw) ? '<button class="btn ghost" id="tripTabBtn">Tabella</button>' : ''}</div>
     <div class="section-title">Fermate della corsa</div>
     <div id="tripStops"><div class="spinner">Carico gli orari…</div></div>
   `, { type: 'trip', raw });
   $('showLineBtn').onclick = () => showLine(line);
+  if (document.getElementById('tripTabBtn')) $('tripTabBtn').onclick = () => openTabella(blockOf(raw), raw);
   updateTripLive();
   try {
     const it = await api.trip(ttTripId);
@@ -949,11 +951,12 @@ function renderLineView() {
     ${summary}
     ${rows ? `<ul class="rows">${rows}</ul>` : `<p class="sub">Nessun mezzo in viaggio in questa direzione.</p>`}
     ${unknown ? `<p class="muted">${unknown} ${unknown === 1 ? 'mezzo' : 'mezzi'} senza direzione nota (non mostrati).</p>` : ''}
-    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button></div>
+    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button><button class="btn ghost" id="stLineBtn">Storico</button></div>
     ${vehicles.length ? `<p class="muted" style="margin-top:10px"><b style="color:${STATUS.ok.color}">verde</b> in orario,
       <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
       <b style="color:${STATUS.early.color}">blu</b> in anticipo. Aggiornamento ogni 30 secondi.</p>` : ''}`;
   document.getElementById('navLineBtn').onclick = () => openNavPicker(name);
+  document.getElementById('stLineBtn').onclick = () => openStorico(name);
   document.getElementById('limLineBtn').onclick = async () => {
     try { const me = await getMe(); openLimitata({ line: name, dir: state.lineDir, pos: me }); } catch (e) { /* già avvisato */ }
   };
@@ -1160,6 +1163,7 @@ async function setDestination(dest) {
   plan();
 }
 function clearPlan() {
+  state.planWhen = null;
   state.to = null; state.from = null; state.itins = []; state.direct = []; state.selItin = -1;
   clearInterval(state.planTimer);
   toInput.value = ''; fromInput.value = '';
@@ -1174,9 +1178,9 @@ async function plan({ silent = false } = {}) {
   if (!silent) openSheet('<div class="spinner">Calcolo il percorso con i dati in tempo reale…</div>', { type: 'plan' }, { tall: true });
   const keepTrip = silent && state.selItin >= 0 ? firstTransitTrip(state.itins[state.selItin]) : null;
   try {
-    const res = await api.plan(state.from.lngLat, state.to.lngLat);
+    const res = await api.plan(state.from.lngLat, state.to.lngLat, {}, state.planWhen);
     if (!state.view || (state.view.type !== 'plan' && state.view.type !== 'itin')) return;
-    state.itins = (res.itineraries || []).filter((it) => new Date(it.endTime) > Date.now()).slice(0, 6);
+    state.itins = (res.itineraries || []).filter((it) => state.planWhen || new Date(it.endTime) > Date.now()).slice(0, 6);
     state.direct = res.direct || [];
     if (silent && state.view.type === 'itin') {
       const idx = state.itins.findIndex((it) => firstTransitTrip(it) === keepTrip);
@@ -1190,7 +1194,8 @@ async function plan({ silent = false } = {}) {
     if (r) r.onclick = () => plan();
   }
   clearInterval(state.planTimer);
-  state.planTimer = setInterval(() => plan({ silent: true }), 60_000);
+  // aggiornamento automatico solo per i viaggi "adesso"
+  if (!state.planWhen) state.planTimer = setInterval(() => plan({ silent: true }), 60_000);
 }
 const firstTransitTrip = (it) => (it && (it.legs.find((l) => l.tripId) || {}).tripId) || null;
 
@@ -1207,9 +1212,19 @@ function renderPlanList() {
   state.focusTrips = null;
   draw();
   map.getSource('plan').setData(EMPTY);
-  const title = `<h2>${esc(state.to.name)}</h2><p class="sub">da ${esc(state.from.name)}</p>`;
+  const w = state.planWhen;
+  const pad = (n) => String(n).padStart(2, '0');
+  const d = w ? w.time : new Date();
+  const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const title = `<h2>${esc(state.to.name)}</h2><p class="sub">da ${esc(state.from.name)}</p>
+    <form id="whenForm" class="when-form">
+      <select id="whenMode"><option value="now"${!w ? ' selected' : ''}>Parti adesso</option><option value="dep"${w && !w.arriveBy ? ' selected' : ''}>Parti alle</option><option value="arr"${w && w.arriveBy ? ' selected' : ''}>Arriva entro</option></select>
+      <input id="whenTime" type="datetime-local" value="${local}"${!w ? ' disabled' : ''}>
+      <button class="btn ghost" type="submit">Calcola</button>
+    </form>`;
   if (!state.itins.length && !state.direct.length) {
-    openSheet(`${title}<p>Nessun percorso trovato nei prossimi minuti. Prova a scegliere un punto di partenza o arrivo più vicino a una fermata.</p>`, { type: 'plan' }, { tall: true });
+    openSheet(`${title}<p>Nessun percorso trovato per quell'orario. Prova un altro orario o un punto più vicino a una fermata.</p>`, { type: 'plan' }, { tall: true });
+    bindWhen();
     return;
   }
   const cards = state.itins.map((it, i) => {
@@ -1235,9 +1250,22 @@ function renderPlanList() {
   sheetBody.querySelectorAll('.itin').forEach((b) => {
     b.onclick = () => (b.dataset.direct ? showWalk(walk) : showItinerary(+b.dataset.i));
   });
+  bindWhen();
   const pts = [state.from.lngLat, state.to.lngLat];
   drawPlan(null);
   fitTo(pts);
+}
+
+function bindWhen() {
+  const f = document.getElementById('whenForm');
+  if (!f) return;
+  const mode = document.getElementById('whenMode'), t = document.getElementById('whenTime');
+  mode.onchange = () => { t.disabled = mode.value === 'now'; };
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    state.planWhen = mode.value === 'now' || !t.value ? null : { time: new Date(t.value), arriveBy: mode.value === 'arr' };
+    plan();
+  };
 }
 
 function drawPlan(it) {
@@ -1499,9 +1527,10 @@ $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
   traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
-initRientri({ state, openSheet, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
+initRientri({ state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
   delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
 $('rientriChip').onclick = () => { hideSuggest(); openRientri(); };
+initStorico({ openSheet });
 initLimitata({ map, store, loadShapes, loadLineStops, openSheet, sheetBody, fitTo, PROXY, traffic: state.traffic });
 
 // Traffico reale TomTom (se sul ponte c'è la chiave): riquadri sotto i percorsi, aggiornati ogni 2 minuti

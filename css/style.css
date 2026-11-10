@@ -373,3 +373,26 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .rn-exp { color: #138A4B; }
 .rn-live { color: #C2410C; font-weight: 700; font-size: 13px; margin-top: 2px; }
 .link-btn { border: 0; background: none; padding: 0 4px; font-size: 14px; color: var(--amaranto); cursor: pointer; }
+
+/* tabella (foglio orario) */
+.tabella { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+.tabella th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 4px 6px; border-bottom: 2px solid var(--ink); }
+.tabella td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tabella td span { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.2; }
+.tabella .tb-n { color: var(--ink-3); width: 22px; }
+.tabella .tb-l { font-weight: 800; }
+.tabella .tb-d { color: var(--ink-3); text-align: right; white-space: nowrap; }
+.tabella .tb-coll td { font-style: italic; color: var(--ink-3); background: var(--paper-2); }
+.tabella .tb-cur td { background: #FFF6E3; }
+.tabella .tb-cur .tb-n::before { content: '▶ '; color: var(--late); }
+.tabella .tb-pause td { text-align: center; font-size: 12px; color: var(--ink-3); background: repeating-linear-gradient(45deg, #fff, #fff 6px, var(--paper-2) 6px, var(--paper-2) 12px); }
+
+.when-form { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+.when-form select, .when-form input { font: inherit; font-size: 15px; border: 1.5px solid var(--line); border-radius: 10px; padding: 7px 8px; background: #fff; }
+.when-form input { flex: 1; min-width: 170px; }
+.when-form input:disabled { opacity: .5; }
+
+.st .st-h { font-weight: 700; white-space: nowrap; }
+.st .st-v { text-align: right; white-space: nowrap; font-weight: 600; }
+.st-bar { height: 10px; background: var(--paper-2); border-radius: 5px; overflow: hidden; min-width: 60px; }
+.st-bar span { display: block; height: 100%; border-radius: 5px; }

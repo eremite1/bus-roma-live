@@ -39,11 +39,13 @@ export const api = {
     return get('/api/v1/reverse-geocode', { place: `${lngLat[1]},${lngLat[0]}` }, opts);
   },
 
-  plan(from, to, opts) {
+  // when = { time: Date, arriveBy: bool } oppure niente (= adesso)
+  plan(from, to, opts = {}, when = null) {
     return get('/api/v6/plan', {
       fromPlace: `${from[1]},${from[0]}`,
       toPlace: `${to[1]},${to[0]}`,
-      time: new Date().toISOString(),
+      time: (when && when.time ? when.time : new Date()).toISOString(),
+      arriveBy: when && when.arriveBy ? 'true' : undefined,
       language: LANG,
       detailedTransfers: false,
       maxPreTransitTime: 1200,

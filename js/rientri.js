@@ -94,7 +94,8 @@ function depotOf(trips, run) {
 }
 
 // ---------------- schermata ----------------
-let view = store('rientriVista') || { tab: 'rientri', from: 9, to: 21, line: '', depot: '' };
+let view = { tab: 'rientri', from: 9, to: 21, line: '', depot: '', place: '', ...(store('rientriVista') || {}) };
+const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 let timer = null;
 
 export async function openRientri() {
@@ -137,6 +138,8 @@ function render() {
       if (view.depot && dep !== view.depot) continue;
       const t = out ? mins(run.start) : mins(run.end);
       if (t < view.from * 60 || t > view.to * 60) continue;
+      // filtro per capolinea (es. "mancini"): dove finisce il servizio (rientri) o dove comincia (uscite)
+      if (view.place && !norm(out ? run.startPlace : run.endPlace).includes(norm(view.place))) continue;
       let live = '', expected = null, state;
       if (out) {
         state = t < now ? 'done' : 'later';
@@ -162,13 +165,14 @@ function render() {
     const collTxt = coll
       ? (out ? `esce alle <b>${esc(coll[1])}</b> con ${esc(coll[3])} da ${esc(coll[4])}` : `poi ${esc(coll[3])} → ${esc(coll[5])}`)
       : 'senza collegamento';
-    return `<li class="rn-${r.state}" data-v="${r.v ? esc(r.v.id) : ''}">
+    return `<li class="rn-${r.state}" data-b="${esc(r.b)}" data-v="${r.v ? esc(r.v.id) : ''}">
       <div class="rn-time">${r.expected != null ? `<span class="rn-exp">${hm(r.expected)}</span><s>${esc(time)}</s>` : esc(time)}</div>
       ${C.badge(r.line, C.colorOf({ line: r.line.split(' ')[0] }))}
       <div class="grow"><div class="title">${out ? 'da' : 'a'} ${esc(place)}</div>
         <div class="muted"><b>${esc(tabName(r.b))}</b> · ${collTxt}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
         ${r.live ? `<div class="rn-live">● ${esc(r.live)}</div>` : ''}</div>
-      <div class="when">${r.v ? `<span class="rn-car">${esc(r.v.vehicleNo)}</span>` : !out && r.state === 'on' ? '<span class="muted">vettura non vista</span>' : ''}</div></li>`;
+      <div class="when">${r.v ? `<span class="rn-car">${esc(r.v.vehicleNo)}</span>` : !out && r.state === 'on' ? '<span class="muted">vettura non vista</span>' : ''}
+        <button class="link-btn" data-tab-open>tabella</button></div></li>`;
   };
   const opts = (n, sel) => Array.from({ length: n }, (_, h) => `<option${h === sel ? ' selected' : ''}>${h}</option>`).join('');
   el.innerHTML = `
@@ -179,9 +183,11 @@ function render() {
     <p class="sub">${out ? 'Inizio servizio' : 'Fine servizio'} tra le ${view.from} e le ${view.to}${view.line ? `, linea ${esc(view.line)}` : ''}${view.depot ? ', ' + esc(depotName(view.depot)) : ''}: ${pending.length} ${out ? 'ancora da uscire o in corso' : 'ancora da rientrare'}.</p>
     <form id="rnForm" class="rn-form">
       <input id="rnLine" value="${esc(view.line)}" placeholder="Linea (tutte)" autocomplete="off">
+      <input id="rnPlace" value="${esc(view.place)}" placeholder="Capolinea (es. Mancini)" autocomplete="off">
       <select id="rnDepot"><option value="">Tutti i depositi</option>${[...depots].sort().map((d) => `<option value="${d}"${d === view.depot ? ' selected' : ''}>${esc(DEPOT_NAMES[d] || 'Deposito ' + d)}</option>`).join('')}</select>
       <select id="rnFrom">${opts(25, view.from)}</select><span>–</span><select id="rnTo">${opts(25, view.to)}</select>
       <button class="btn ghost" type="submit">Filtra</button>
+      <button class="btn ghost" type="button" id="rnNow">Prossime 2 ore</button>
     </form>
     ${rows.length ? `<ul class="rows">${rows.map(row).join('')}</ul>` : '<p class="muted">Nessuna tabella in questa fascia.</p>'}
     <p class="muted">${out ? "L'orario è l'inizio della prima corsa; se c'è un collegamento è indicata anche l'ora di uscita dal deposito." : "L'orario è la fine dell'ultima corsa di servizio; il bus spesso rientra prima se arriva in anticipo (vedi stato in diretta)."}
@@ -189,15 +195,65 @@ function render() {
   el.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { view.tab = b.dataset.tab; store('rientriVista', view); render(); }; });
   document.getElementById('rnForm').onsubmit = (e) => {
     e.preventDefault();
-    view = { ...view, line: document.getElementById('rnLine').value.trim(), depot: document.getElementById('rnDepot').value,
+    view = { ...view, line: document.getElementById('rnLine').value.trim(), depot: document.getElementById('rnDepot').value, place: document.getElementById('rnPlace').value.trim(),
       from: +document.getElementById('rnFrom').value, to: +document.getElementById('rnTo').value };
     store('rientriVista', view);
     render();
   };
-  el.querySelectorAll('li[data-v]').forEach((li) => {
-    if (!li.dataset.v) return;
-    li.onclick = () => { const v = C.vehicleById(li.dataset.v); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } };
+  document.getElementById('rnNow').onclick = () => {
+    const h = new Date().getHours();
+    view = { ...view, from: h, to: Math.min(24, h + 2), place: document.getElementById('rnPlace').value.trim(), line: document.getElementById('rnLine').value.trim() };
+    store('rientriVista', view);
+    render();
+  };
+  el.querySelectorAll('li[data-b]').forEach((li) => {
+    li.onclick = (e) => {
+      if (e.target.closest('[data-tab-open]')) { openTabella(li.dataset.b); return; }
+      const v = li.dataset.v && C.vehicleById(li.dataset.v);
+      if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } else openTabella(li.dataset.b);
+    };
   });
+}
+
+// ---------------- tabella completa (tutte le corse della giornata) ----------------
+export async function openTabella(b, highlightTrip) {
+  await loadBlocks();
+  const trips = blocks[b];
+  if (!trips) { C.toast && C.toast('Tabella non trovata nei dati di oggi'); return; }
+  const v = vehiclesByBlock().get(b);
+  const cur = highlightTrip || (v && v.tripId);
+  const runs = runsOf(trips);
+  const dep = depotOf(trips, runs[0]);
+  const rowsHtml = [];
+  trips.forEach((t, i) => {
+    const prev = trips[i - 1];
+    if (prev && mins(t[1]) - mins(prev[2]) >= 60) {
+      rowsHtml.push(`<tr class="tb-pause"><td colspan="5">pausa / in deposito dalle ${esc(prev[2])} alle ${esc(t[1])}</td></tr>`);
+    }
+    const coll = isColl(t[3]);
+    rowsHtml.push(`<tr class="${coll ? 'tb-coll' : ''}${t[0] === cur ? ' tb-cur' : ''}">
+      <td class="tb-n">${i + 1}</td><td class="tb-l">${esc(t[3])}</td>
+      <td><b>${esc(t[1])}</b><span>${esc(t[4])}</span></td>
+      <td><b>${esc(t[2])}</b><span>${esc(t[5])}</span></td>
+      <td class="tb-d">${mins(t[2]) - mins(t[1])}′</td></tr>`);
+  });
+  const lines = [...new Set(trips.map((t) => t[3]).filter((l) => !isColl(l)))];
+  C.openSheet(`
+    <div class="head"><span class="badge big" style="background:#1B1D22">${esc(tabName(b).replace(/^Tab\. /, ''))}</span>
+      <div><h2 style="margin:0">Tabella ${esc(tabName(b).replace(/^Tab\. /, ""))}</h2><div class="muted">${esc(lines.join(' › '))}${dep ? ' · ' + esc(depotName(dep)) : ''}${v ? ' · vettura <b>' + esc(v.vehicleNo) + '</b>' : ''}</div></div></div>
+    <div class="facts">${runs.map((r) => `<span>Uscita <b>${esc(r.before ? r.before[1] : r.start)}</b> · rientro <b>${esc(r.after ? r.after[2] : r.end)}</b></span>`).join('')}<span>${trips.length} corse</span></div>
+    <table class="tabella"><thead><tr><th>#</th><th>Linea</th><th>Partenza</th><th>Arrivo</th><th></th></tr></thead><tbody>${rowsHtml.join('')}</tbody></table>
+    <p class="muted">In corsivo i collegamenti col deposito. Orari ufficiali ATAC di oggi.</p>
+    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button>${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
+  `, { type: 'tabella', b }, { tall: true });
+  document.getElementById('tbName').onclick = () => {
+    const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', names[nameKey(trips)] || '');
+    if (val !== null) { setTabName(b, val.trim()); openTabella(b, highlightTrip); }
+  };
+  const vb = document.getElementById('tbVeh');
+  if (vb) vb.onclick = () => { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); };
+  const curRow = document.querySelector('.tabella .tb-cur');
+  if (curRow) setTimeout(() => curRow.scrollIntoView({ block: 'center' }), 100);
 }
 
 export function onVehicles() { if (C && C.state.view?.type === 'rientri') render(); }
@@ -210,7 +266,7 @@ export async function tabellaText(v) {
   const trips = blocks[b];
   if (!trips) return esc(`Tab. ${b.replace(/^0#/, '')}`);
   const i = trips.findIndex((t) => t[0] === v.tripId);
-  const head = `<b>${esc(tabName(b))}</b> <button class="link-btn" data-tabname="${esc(b)}" aria-label="Rinomina tabella">✎</button>${i >= 0 ? ` · corsa ${i + 1} di ${trips.length}` : ''} · `;
+  const head = `<b>${esc(tabName(b))}</b> <button class="link-btn" data-tabname="${esc(b)}" aria-label="Rinomina tabella">✎</button> <button class="link-btn" data-tabopen="${esc(b)}" data-trip="${esc(v.tripId)}">apri tabella</button>${i >= 0 ? ` · corsa ${i + 1} di ${trips.length}` : ''} · `;
   if (i >= 0 && isColl(trips[i][3])) return head + `<b class="late">collegamento ${esc(trips[i][3])} → ${esc(trips[i][5])}</b>`;
   const run = runsOf(trips).find((e) => i >= e.first && i <= e.idx);
   if (!run) return head + `fine servizio alle ${trips[trips.length - 1][2]}`;
@@ -221,6 +277,8 @@ export async function tabellaText(v) {
 }
 // pulsante ✎ nella scheda: assegna il vostro nome alla tabella (es. 913/5)
 document.addEventListener('click', (e) => {
+  const op = e.target.closest && e.target.closest('[data-tabopen]');
+  if (op) { openTabella(op.dataset.tabopen, op.dataset.trip); return; }
   const btn = e.target.closest && e.target.closest('[data-tabname]');
   if (!btn) return;
   const b = btn.dataset.tabname;

@@ -172,7 +172,7 @@ async function main() {
   await page.evaluate(() => {});
   const mapObj = 'document.querySelector("#map")';
   await page.mouse.wheel(0, 0);
-  await page.evaluate(() => new Promise((r) => { const m = window.__busMap; m.jumpTo({ center: [12.488, 41.899], zoom: 15.3 }); m.once('idle', r); }));
+  await page.evaluate(() => new Promise((r) => { const m = window.__busMap; m.jumpTo({ center: [12.4915, 41.8995], zoom: 15.3 }); m.once('idle', r); }));
   await wait(2200);
   await shot(page, '02-gps-zoom');
   // clic sul mezzo 3456 (linea 64)
@@ -215,6 +215,9 @@ async function main() {
   await page.waitForSelector('.itin', { timeout: 10000 });
   await wait(1200);
   await shot(page, '07-plan-list');
+  console.log('selettore orario:', await page.locator('#whenForm').count());
+  await page.selectOption('#whenMode', 'dep'); await page.fill('#whenTime', '2026-11-12T08:30'); await page.click('#whenForm button');
+  await page.waitForSelector('.itin', { timeout: 10000 });
   await page.click('.itin[data-i="0"]');
   await wait(1500);
   await shot(page, '08-itinerary');

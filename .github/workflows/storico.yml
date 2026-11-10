@@ -1,0 +1,43 @@
+name: Archivio storico (ritardi e mezzi per linea)
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # ogni 10 minuti (GitHub a volte ritarda di qualche minuto)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: storico
+  cancel-in-progress: false
+
+jobs:
+  raccogli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install gtfs-realtime-bindings
+      - name: Prendi l'archivio (ramo "storico")
+        run: |
+          if git ls-remote --exit-code --heads origin storico; then
+            git fetch origin storico --depth 1
+            git worktree add archivio origin/storico
+          else
+            git worktree add --detach archivio
+            cd archivio && git checkout --orphan storico-nuovo && git rm -rf . -q && cd ..
+          fi
+      - name: Raccogli i dati
+        run: python tools/collect_rt.py archivio
+      - name: Salva
+        run: |
+          cd archivio
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Archivio $(date -u +%Y-%m-%dT%H:%M)" || exit 0
+          git push origin HEAD:storico
