@@ -372,3 +372,4 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .rn-time s { display: block; font-size: 12px; font-weight: 500; color: var(--ink-3); }
 .rn-exp { color: #138A4B; }
 .rn-live { color: #C2410C; font-weight: 700; font-size: 13px; margin-top: 2px; }
+.link-btn { border: 0; background: none; padding: 0 4px; font-size: 14px; color: var(--amaranto); cursor: pointer; }
