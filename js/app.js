@@ -7,6 +7,7 @@ import { initNav, openNavPicker, setupNavLayers, navState } from './nav.js';
 import { Traffic, setupTrafficLayer } from './traffic.js';
 import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, update as updateDriver } from './driver.js';
 import { initLimitata, openLimitata } from './limitata.js';
+import { initRientri, openRientri, onVehicles as rientriUpdate, tabellaText } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -566,6 +567,7 @@ function showVehicle(v) {
       <div class="dest" id="vehDest">${v.headsign ? `<span class="arrow">verso</span> ${esc(v.headsign)}` : '<span class="arrow">Direzione non disponibile</span>'}</div>
     </div>
     <div class="facts">${facts.join('<span class="muted">·</span>')}</div>
+    <div class="facts" id="vehTab"></div>
     <div class="actions">
       <button class="btn ghost" id="showLineBtn">${ICON.bus} Tutta la linea ${esc(v.line)}</button>
     </div>
@@ -574,6 +576,7 @@ function showVehicle(v) {
   `, { type: 'vehicle', id: v.id });
   $('showLineBtn').onclick = () => showLine(v.line);
   showPoint([v.lng, v.lat], map.getZoom());
+  tabellaText(v).then((t) => { const el = document.getElementById('vehTab'); if (el) el.innerHTML = t; });
   loadTripFor(v);
 }
 
@@ -1346,6 +1349,7 @@ function updateLiveBoxes() {
 
 function onVehiclesUpdated() {
   updateDriver();
+  rientriUpdate();
   if (!state.view) return;
   if (state.view.type === 'itin') updateLiveBoxes();
   else if (state.view.type === 'line') renderLineView();
@@ -1495,6 +1499,8 @@ $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
   traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
+initRientri({ state, openSheet, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays() });
+$('rientriChip').onclick = () => { hideSuggest(); openRientri(); };
 initLimitata({ map, store, loadShapes, loadLineStops, openSheet, sheetBody, fitTo, PROXY, traffic: state.traffic });
 
 // Traffico reale TomTom (se sul ponte c'è la chiave): riquadri sotto i percorsi, aggiornati ogni 2 minuti
