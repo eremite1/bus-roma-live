@@ -1499,7 +1499,8 @@ $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
   traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
-initRientri({ state, openSheet, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays() });
+initRientri({ state, openSheet, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
+  delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
 $('rientriChip').onclick = () => { hideSuggest(); openRientri(); };
 initLimitata({ map, store, loadShapes, loadLineStops, openSheet, sheetBody, fitTo, PROXY, traffic: state.traffic });
 

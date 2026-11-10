@@ -368,3 +368,7 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .rn-time { font-weight: 800; font-size: 17px; width: 52px; flex: none; }
 .rows li.rn-done { opacity: .45; }
 .rn-car { display: inline-block; background: #1B1D22; color: #fff; border-radius: 8px; padding: 3px 8px; font-weight: 800; }
+
+.rn-time s { display: block; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.rn-exp { color: #138A4B; }
+.rn-live { color: #C2410C; font-weight: 700; font-size: 13px; margin-top: 2px; }
