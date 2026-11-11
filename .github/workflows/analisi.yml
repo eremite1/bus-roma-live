@@ -1,0 +1,23 @@
+name: Analisi tabelle
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['tools/analizza_tabelle.py', '.github/workflows/analisi.yml']
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python tools/analizza_tabelle.py
+      - name: Salva nel ramo analisi
+        run: |
+          mv analisi /tmp/analisi
+          git config user.name eremite1; git config user.email eremite1@users.noreply.github.com
+          git checkout --orphan analisi; git rm -rfq .
+          cp -r /tmp/analisi/. .
+          git add -A; git commit -qm "Analisi tabelle"; git push -fq origin analisi
