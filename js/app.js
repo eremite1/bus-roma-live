@@ -8,6 +8,7 @@ import { Traffic, setupTrafficLayer } from './traffic.js';
 import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, update as updateDriver } from './driver.js';
 import { initLimitata, openLimitata } from './limitata.js';
 import { initStorico, openStorico } from './storico.js';
+import { initPreferiti, openPreferiti, openTurno, favBtn } from './preferiti.js';
 import { initRientri, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
@@ -575,6 +576,7 @@ function showVehicle(v) {
     <div class="facts" id="vehTab"></div>
     <div class="actions">
       <button class="btn ghost" id="showLineBtn">${ICON.bus} Tutta la linea ${esc(v.line)}</button>
+      ${v.source === 'gps' && v.vehicleNo ? favBtn({ type: 'vettura', no: String(v.vehicleNo) }) : ''}
     </div>
     <div class="section-title">Fermate della corsa</div>
     <div id="tripStops"><div class="spinner">Carico gli orari…</div></div>
@@ -955,7 +957,7 @@ function renderLineView() {
     ${summary}
     ${rows ? `<ul class="rows">${rows}</ul>` : `<p class="sub">Nessun mezzo in viaggio in questa direzione.</p>`}
     ${unknown ? `<p class="muted">${unknown} ${unknown === 1 ? 'mezzo' : 'mezzi'} senza direzione nota (non mostrati).</p>` : ''}
-    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button><button class="btn ghost" id="stLineBtn">Storico</button></div>
+    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button><button class="btn ghost" id="stLineBtn">Storico</button>${favBtn({ type: 'linea', line: String(name) })}</div>
     ${vehicles.length ? `<p class="muted" style="margin-top:10px"><b style="color:${STATUS.ok.color}">verde</b> in orario,
       <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
       <b style="color:${STATUS.early.color}">blu</b> in anticipo. Aggiornamento ogni 30 secondi.</p>` : ''}`;
@@ -1535,8 +1537,11 @@ $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
   traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
-initRientri({ state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
+initRientri({ favBtn, state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
   delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
+initPreferiti({ state, openSheet, toast, showVehicle: (v) => showVehicle(v), showPoint, showLine: (n) => showLine(n), refreshAtac: () => PROXY && fetchAtacDelays() });
+$('turnoChip').onclick = () => { hideSuggest(); openTurno(); };
+$('prefChip').onclick = () => { hideSuggest(); openPreferiti(); };
 $('rientriChip').onclick = () => { hideSuggest(); openRientri(); };
 initStorico({ openSheet });
 initLimitata({ map, store, loadShapes, loadLineStops, openSheet, sheetBody, fitTo, PROXY, traffic: state.traffic });

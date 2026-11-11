@@ -420,3 +420,25 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 6px; margin: -2px -2px -6px; }
 .chips::-webkit-scrollbar { display: none; }
 .chips .chip { flex: none; }
+
+/* preferiti e turno */
+.fav-btn.on { color: #B8860B; border-color: #E8C35A; }
+.pf-list { list-style: none; margin: 8px 0; padding: 0; }
+.pf-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--line, #e3e3e3); }
+.pf-open { flex: 1; display: flex; gap: 10px; align-items: center; text-align: left; background: none; border: 0; padding: 10px 2px; font: inherit; color: inherit; cursor: pointer; }
+.pf-open small { display: block; color: #666; margin-top: 2px; }
+.pf-ico { font-size: 22px; width: 30px; text-align: center; }
+.pf-del { background: none; border: 0; font-size: 18px; color: #999; padding: 0 10px; cursor: pointer; }
+.pf-add { display: flex; gap: 8px; margin: 10px 0; }
+.pf-add input, .tu-form input { flex: 1; min-width: 0; font: inherit; padding: 9px 10px; border: 1px solid #ccc; border-radius: 10px; }
+.tu-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; margin: 10px 0 14px; }
+.tu-form label { display: flex; flex-direction: column; font-size: 13px; color: #555; gap: 4px; }
+.tu-form .btn, .tu-form label:first-child { grid-column: 1 / -1; }
+.tu-form input { width: 100%; box-sizing: border-box; }
+.tu-card { min-width: 0; overflow-wrap: anywhere; }
+.tu-card { border: 1px solid #ddd; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; display: grid; gap: 4px; }
+.tu-card.best { border-color: #8E1537; box-shadow: 0 0 0 1px #8E1537 inset; }
+.tu-head { display: flex; justify-content: space-between; gap: 8px; font-size: 17px; }
+.tu-head span { color: #666; font-size: 14px; }
+.tu-vline { margin-top: 4px; }
+.tu-veh { color: #8E1537; font-size: 17px; }

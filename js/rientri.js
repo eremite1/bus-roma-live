@@ -20,7 +20,7 @@ const DEPOT_NAMES = { G: 'Grottarossa', M: 'Magliana', P: 'Portonaccio', T: 'Tor
 
 let blocks = null, depotPlace = {}, lineDepot = {}, names = {};
 const DEPOT_STOPS = new Set();
-async function loadBlocks() {
+export async function loadBlocks() {
   if (blocks) return blocks;
   try { blocks = await (await fetch('data/blocks.json', { cache: 'no-cache' })).json(); } catch (e) { blocks = {}; }
   try { names = await (await fetch('data/tabelle.json', { cache: 'no-cache' })).json(); } catch (e) { names = {}; }
@@ -72,7 +72,7 @@ export function runsOf(trips) {
 export const rientriOf = runsOf;
 
 // Nome della tabella (es. "913/4"): da data/tabelle.json o assegnato a mano; chiave = linea@orario prima corsa
-function nameKey(trips) {
+export function nameKey(trips) {
   const r = runsOf(trips)[0];
   return r ? `${r.firstLine}@${r.start}` : '';
 }
@@ -109,7 +109,7 @@ export async function openRientri() {
   timer = setInterval(() => { if (C.state.view?.type === 'rientri') render(); else clearInterval(timer); }, 30_000);
 }
 
-function vehiclesByBlock() {
+export function vehiclesByBlock() {
   const map = new Map();
   for (const s of C.state.shown.values()) {
     const v = s.v;
@@ -218,6 +218,7 @@ function render() {
 }
 
 // ---------------- tabella completa (tutte le corse della giornata) ----------------
+export const blocksNow = () => blocks || {};
 export async function openTabella(b, highlightTrip) {
   await loadBlocks();
   const trips = blocks[b];
@@ -260,7 +261,7 @@ export async function openTabella(b, highlightTrip) {
       <div class="tb-cols">${cells.join('')}</div>
     </div>
     <p class="muted">Orari ufficiali ATAC di oggi. In grigio i collegamenti col deposito; evidenziata la corsa in corso.</p>
-    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button>${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
+    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button>${C.favBtn ? C.favBtn({ type: 'tabella', b, key: nameKey(trips), label: name }) : ''}${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
   `, { type: 'tabella', b }, { tall: true });
   document.getElementById('tbName').onclick = () => {
     const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', names[nameKey(trips)] || '');
