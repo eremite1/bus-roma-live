@@ -37,6 +37,8 @@ export default {
 
     const url = new URL(request.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, '') || 'vehicles';
+    if (name === 'app') return paginaApp(url);
+    if (name === 'BusRomaLive.apk') return scaricaApk(ctx);
     if (name === 'deviazione') return deviazione(request, env);
     if (name === 'traffico-stato') return new Response(JSON.stringify({ tomtom: !!env.TOMTOM_API_KEY }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
     if (name.startsWith('traffico/')) return trafficTile(request, env, ctx, name);
@@ -228,4 +230,46 @@ async function travelTimes(request, env) {
     m: l.summary.lengthInMeters,
   }));
   return new Response(JSON.stringify({ tratti }), { headers: cors });
+}
+
+
+// ---------- download dell'app ----------
+// Pagina semplice con il pulsante "Scarica" e il file dell'app servito da qui (sempre l'ultima versione).
+const RELEASE_API = 'https://api.github.com/repos/eremite1/bus-roma-live/releases/latest';
+async function scaricaApk(ctx) {
+  const cache = caches.default;
+  const key = new Request('https://cache.local/BusRomaLive.apk');
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const rel = await fetch(RELEASE_API, { headers: { 'User-Agent': 'bus-roma-live', Accept: 'application/vnd.github+json' } });
+  if (!rel.ok) return new Response('Download non disponibile, riprova tra poco', { status: 502 });
+  const asset = ((await rel.json()).assets || []).find((a) => a.name.endsWith('.apk'));
+  if (!asset) return new Response('Download non disponibile', { status: 502 });
+  const f = await fetch(asset.browser_download_url, { headers: { 'User-Agent': 'bus-roma-live' } });
+  if (!f.ok) return new Response('Download non disponibile', { status: 502 });
+  const res = new Response(f.body, { headers: {
+    'Content-Type': 'application/vnd.android.package-archive',
+    'Content-Disposition': 'attachment; filename="BusRomaLive.apk"',
+    'Cache-Control': 'public, max-age=600',
+  } });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+
+function paginaApp(url) {
+  const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bus Roma Live</title><style>
+body{margin:0;font-family:system-ui,sans-serif;background:linear-gradient(#A51C45,#6E0F2B);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}
+main{max-width:420px;padding:32px 22px;text-align:center}h1{margin:.2em 0;font-size:30px}p{color:#F3E3E8;line-height:1.45}
+a.btn{display:block;margin:26px 0 18px;padding:18px;border-radius:16px;background:#F2B33D;color:#1B1D22;font-weight:800;font-size:20px;text-decoration:none}
+ol{text-align:left;color:#F3E3E8;line-height:1.6;padding-left:20px}small{color:#D9B8C3}
+</style></head><body><main>
+<div style="font-size:64px">🚌</div><h1>Bus Roma Live</h1><p>Mappa in tempo reale dei bus di Roma, per Android.</p>
+<a class="btn" href="${url.origin}/BusRomaLive.apk">Scarica l'app</a>
+<ol><li>Tocca <b>Scarica l'app</b> e attendi la fine del download.</li>
+<li>Apri il file <b>BusRomaLive.apk</b> dalle notifiche.</li>
+<li>Se il telefono lo chiede, consenti l'installazione da questa fonte e tocca <b>Installa</b>.</li>
+<li>Apri l'app e tocca <b>Richiedi codice su WhatsApp</b>.</li></ol>
+<small>App non ufficiale, non collegata ad ATAC. Dati aperti Roma Mobilità.</small></main></body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }

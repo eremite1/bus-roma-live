@@ -14,8 +14,8 @@ import javax.crypto.spec.SecretKeySpec
  */
 object Accesso {
     private const val PREF = "accesso"
-    private const val SALE = "1f6becad62fb715a"
-    private const val ADMIN_HASH = "e5cd6f3e03571bb7b255851eea35cba78c4493bd78d4729f2f1156e6e3864d35"
+    private const val SALE = "b2005541b898a2b8"
+    private const val ADMIN_HASH = "38e30b87efc3f9f2be0bc605dbee86db7631f4777bf80f1b2d488cf7025a4d60"
     private const val SEGRETO = "498fe0c9ff37c93ec50328f7d778cd7d13b7ea2220f109cc"
     private const val ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -38,7 +38,8 @@ object Accesso {
         return aTrattini((0 until 8).map { ALFABETO[(d[it].toInt() and 0xff) % ALFABETO.length] }.joinToString(""))
     }
 
-    private fun eAdmin(input: String) = hex(sha256(SALE + input.trim().uppercase())) == ADMIN_HASH
+    private fun hashAdmin(input: String) = hex(sha256(SALE + input.trim()))
+    private fun eAdmin(input: String) = hashAdmin(input) == ADMIN_HASH
 
     fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
@@ -47,12 +48,20 @@ object Accesso {
         return salvato == codicePer(codiceTelefono(ctx)) || isAdmin(ctx)
     }
 
-    fun isAdmin(ctx: Context): Boolean = prefs(ctx).getString("admin", null)?.let { eAdmin(it) } == true
+    fun isAdmin(ctx: Context): Boolean {
+        val p = prefs(ctx)
+        // chi era già amministratore con la vecchia password resta amministratore
+        if (p.getString("admin2", null) == null && p.getString("admin", null) != null)
+            p.edit().remove("admin").putString("admin2", ADMIN_HASH).apply()
+        return p.getString("admin2", null) == ADMIN_HASH
+    }
+
+    const val WHATSAPP = "393299554129"
 
     /** true se il codice è giusto per questo telefono (o è la password amministratore). */
     fun prova(ctx: Context, input: String): Boolean {
         if (eAdmin(input)) {
-            prefs(ctx).edit().putString("admin", input.trim().uppercase()).putString("codice", codicePer(codiceTelefono(ctx))).apply()
+            prefs(ctx).edit().remove("admin").putString("admin2", hashAdmin(input)).putString("codice", codicePer(codiceTelefono(ctx))).apply()
             return true
         }
         if (pulisci(input) == pulisci(codicePer(codiceTelefono(ctx)))) {

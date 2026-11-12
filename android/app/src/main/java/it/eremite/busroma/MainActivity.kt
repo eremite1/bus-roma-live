@@ -132,34 +132,36 @@ class MainActivity : Activity() {
         }
         col.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams((96 * dp).toInt(), (96 * dp).toInt()))
         col.addView(testo("Bus Roma Live", 26f, "#FFFFFF", true, 16))
-        col.addView(testo("Per usare l'app serve un codice di accesso, valido solo per questo telefono. Si inserisce una volta sola.", 15f, "#F3E3E8", top = 12))
-        col.addView(testo("Codice di questo telefono", 13f, "#E8C9D2", top = 22))
-        col.addView(testo(tel, 30f, "#F2B33D", true, 2).apply { setTextIsSelectable(true) })
-        col.addView(android.widget.Button(this).apply {
-            text = "Invia il codice del telefono"
+        col.addView(testo("Per entrare serve un codice di accesso. Si chiede una volta sola.", 16f, "#F3E3E8", top = 12))
+        val bott = { t: String, bg: String -> android.widget.Button(this).apply {
+            text = t; textSize = 17f; setTextColor(Color.WHITE); isAllCaps = false
+            background = GradientDrawable().apply { cornerRadius = 14 * dp; setColor(Color.parseColor(bg)) }
+            setPadding(0, (14 * dp).toInt(), 0, (14 * dp).toInt())
+        } }
+        val lp = { top: Int -> LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (top * dp).toInt() } }
+        col.addView(bott("📲  Richiedi codice su WhatsApp", "#25D366").apply {
             setOnClickListener {
-                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Codice telefono Bus Roma Live: $tel")
-                }, "Invia il codice"))
+                val msg = "Ciao, mi mandi il codice per Bus Roma Live? Il mio telefono: $tel"
+                val uri = Uri.parse("https://wa.me/${Accesso.WHATSAPP}?text=" + Uri.encode(msg))
+                try { startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (e: Exception) { }
             }
-        })
+        }, lp(26))
         val campo = android.widget.EditText(this).apply {
-            hint = "Codice di accesso (es. K8PD-2XQM)"
-            setHintTextColor(Color.parseColor("#C9A3AF")); setTextColor(Color.WHITE); textSize = 20f
+            hint = "Scrivi qui il codice ricevuto"
+            setHintTextColor(Color.parseColor("#C9A3AF")); setTextColor(Color.WHITE); textSize = 22f
             gravity = Gravity.CENTER; isSingleLine = true
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
         }
-        col.addView(campo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (24 * dp).toInt() })
+        col.addView(campo, lp(26))
         val esito = testo("", 14f, "#FFD7D7", top = 8)
-        col.addView(android.widget.Button(this).apply {
-            text = "Entra"
+        col.addView(bott("Entra", "#1B1D22").apply {
             setOnClickListener {
                 if (Accesso.prova(this@MainActivity, campo.text.toString())) recreate()
                 else esito.text = "Codice non valido per questo telefono."
             }
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (12 * dp).toInt() })
+        }, lp(10))
         col.addView(esito)
-        col.addView(testo("Manda il codice del telefono a chi gestisce l'app: ti risponderà con il codice di accesso.", 13f, "#E8C9D2", top = 18))
+        col.addView(testo("Codice telefono: $tel", 12f, "#D9B8C3", top = 22).apply { setTextIsSelectable(true) })
         setContentView(android.widget.ScrollView(this).apply { isFillViewport = true; addView(col) })
     }
 

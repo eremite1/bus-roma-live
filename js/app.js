@@ -1424,8 +1424,8 @@ $('infoBtn').onclick = () => {
     ${window.Android && Android.appVersion ? `<div class="section-title">App</div><p>Versione <b>${esc(Android.appVersion())}</b></p>
       <div class="actions" style="margin-top:0"><button class="btn" id="appUpd">Controlla aggiornamenti</button></div>` : ''}
     ${window.Android && Android.isAdmin && Android.isAdmin() ? `<div class="section-title">Codici di accesso (amministratore)</div>
-      <p class="muted">Scrivi il codice del telefono che ti hanno mandato: ottieni il codice di accesso valido solo per quel telefono.</p>
-      <form class="pf-add" id="genForm"><input id="genTel" placeholder="Codice telefono (es. 7F3A-91C2)" autocomplete="off"><button class="btn" type="submit">Genera</button></form>
+      <p class="muted">Incolla il messaggio WhatsApp ricevuto (o solo il codice telefono): ottieni il codice di accesso valido solo per quel telefono.</p>
+      <form class="pf-add" id="genForm"><input id="genTel" placeholder="Incolla qui il messaggio" autocomplete="off"><button class="btn" type="submit">Genera</button></form>
       <p id="genOut" class="tu-veh"></p>` : ''}
     <p class="muted">Progetto personale non commerciale, senza legami con ATAC o Roma Mobilità.</p>
   </div>`, { type: 'info' });
@@ -1434,9 +1434,13 @@ $('infoBtn').onclick = () => {
   const g = document.getElementById('genForm');
   if (g) g.onsubmit = (e) => {
     e.preventDefault();
-    const tel = document.getElementById('genTel').value.trim();
+    const m = document.getElementById('genTel').value.match(/[0-9A-F]{4}-?[0-9A-F]{4}/i);
+    const tel = m ? m[0].toUpperCase().replace(/^(.{4})-?/, '$1-') : '';
     const code = tel ? Android.genCode(tel) : '';
-    document.getElementById('genOut').textContent = code ? `Codice di accesso per ${tel.toUpperCase()}: ${code}` : '';
+    const out = document.getElementById('genOut');
+    out.innerHTML = code ? `Codice per ${esc(tel)}: <b>${esc(code)}</b> <button class="btn ghost" type="button" id="genCopy">Copia</button>` : 'Non trovo un codice telefono nel testo.';
+    const c = document.getElementById('genCopy');
+    if (c) c.onclick = () => { try { navigator.clipboard.writeText(code); toast('Codice copiato'); } catch (err) {} };
   };
 };
 
