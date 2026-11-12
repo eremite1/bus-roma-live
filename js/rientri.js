@@ -18,12 +18,45 @@ const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStor
 export const isColl = (line) => /^[A-Z]\d{2}$/.test(String(line || ''));
 const DEPOT_NAMES = { G: 'Grottarossa', M: 'Magliana', P: 'Portonaccio', T: 'Tor Vergata', A: 'Prenestina' };
 
-let blocks = null, depotPlace = {}, lineDepot = {}, names = {};
+let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null;
+const dayCache = {}; // 'AAAA-MM-GG' -> { blocks, rimessa }
+let dayIndex = null;
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+async function loadDay(date) {
+  if (!date || date === todayISO()) return { blocks, rimessa: rim, today: true };
+  if (!dayCache[date]) {
+    try { dayCache[date] = await (await fetch(`data/giorni/${date}.json`, { cache: 'no-cache' })).json(); } catch (e) { dayCache[date] = { blocks: {}, rimessa: null }; }
+  }
+  return { ...dayCache[date], today: false };
+}
+// corse di una tabella: di oggi o di un altro giorno già caricato
+function tripsOf(b) {
+  if (blocks && blocks[b]) return blocks[b];
+  for (const d of Object.values(dayCache)) if (d.blocks && d.blocks[b]) return d.blocks[b];
+  return null;
+}
+// Orari di USCITA dalla rimessa e RIENTRO in rimessa di una serie di servizio.
+// f: 0 = vero (collegamento o fermata del deposito), 1 = dal tempo di un collegamento vicino, 2 = stima dalla distanza
+export function rimessaRun(trips, run, R = rim) {
+  const D = depotOf(trips, run);
+  const tab = (R && R.tempi && R.tempi[D]) || {};
+  let out, outF, inn, inF;
+  if (run.before) { out = mins(run.before[1]); outF = 0; }
+  else if (tab[run.startPlace]) { out = mins(run.start) - tab[run.startPlace][0]; outF = tab[run.startPlace][1]; }
+  else { out = mins(run.start); outF = 3; }
+  if (run.after) { inn = mins(trips[run.idx + run.colls][2]); inF = 0; }
+  else if (tab[run.endPlace]) { inn = mins(run.end) + tab[run.endPlace][0]; inF = tab[run.endPlace][1]; }
+  else { inn = mins(run.end); inF = 3; }
+  return { out, outF, inn, inF, D };
+}
+const hmS = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
+const tilde = (f) => (f >= 2 ? '≈' : '');
 const DEPOT_STOPS = new Set();
 export async function loadBlocks() {
   if (blocks) return blocks;
   try { blocks = await (await fetch('data/blocks.json', { cache: 'no-cache' })).json(); } catch (e) { blocks = {}; }
   try { names = await (await fetch('data/tabelle.json', { cache: 'no-cache' })).json(); } catch (e) { names = {}; }
+  try { rim = await (await fetch('data/rimessa.json', { cache: 'no-cache' })).json(); } catch (e) { rim = null; }
   Object.assign(names, store('tabelleNomi') || {});
   // dove si trova ogni deposito: la fermata più frequente tra le estremità dei suoi collegamenti
   const count = {};
@@ -82,7 +115,7 @@ export function nameKey(trips) {
 }
 const plainKey = (k) => k.split('>')[0];
 export function tabName(b) {
-  const trips = blocks && blocks[b];
+  const trips = tripsOf(b);
   const k = trips && nameKey(trips);
   const n = k && (names[k] || names[plainKey(k)]);
   return n || `Tab. ${b.replace(/^0#/, '')}`;
@@ -102,13 +135,15 @@ function depotOf(trips, run) {
 }
 
 // ---------------- schermata ----------------
-let view = { tab: 'rientri', from: 9, to: 21, line: '', depot: '', place: '', ...(store('rientriVista') || {}) };
+let view = { tab: 'rientri', from: 0, to: 24, line: '', depot: '', place: '', date: '', ...(store('rientriVista2') || {}) };
 const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 let timer = null;
 
 export async function openRientri() {
   C.openSheet('<div id="rnView"><div class="spinner">Carico le tabelle di oggi…</div></div>', { type: 'rientri' }, { tall: true });
   await loadBlocks();
+  if (!dayIndex) { try { dayIndex = await (await fetch('data/giorni/indice.json', { cache: 'no-cache' })).json(); } catch (e) { dayIndex = []; } }
+  if (view.date && view.date < todayISO()) view.date = '';
   C.refreshAtac && C.refreshAtac(); // collega le vetture GPS alle corse anche quando il GPS non lo dice
   render();
   clearInterval(timer);
@@ -126,15 +161,20 @@ export function vehiclesByBlock() {
   return map;
 }
 
-function render() {
-  const el = document.getElementById('rnView');
+async function render() {
+  let el = document.getElementById('rnView');
   if (!el) return;
-  const vb = vehiclesByBlock();
-  const now = new Date().getHours() * 60 + new Date().getMinutes();
+  const day = await loadDay(view.date);
+  el = document.getElementById('rnView');
+  if (!el) return;
+  const vb = day.today ? vehiclesByBlock() : new Map();
+  const now = day.today ? new Date().getHours() * 60 + new Date().getMinutes() : -1;
   const out = view.tab === 'uscite';
+  const GN = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+  const dayLabel = (d) => { if (!d || d === todayISO()) return 'Oggi'; const x = new Date(d + 'T12:00'); return `${GN[x.getDay()]} ${x.getDate()}/${x.getMonth() + 1}`; };
   const rows = [];
   const depots = new Set();
-  for (const [b, trips] of Object.entries(blocks || {})) {
+  for (const [b, trips] of Object.entries(day.blocks || {})) {
     if (!trips.length) continue;
     const lines = [...new Set(trips.map((t) => String(t[3])).filter((l) => !isColl(l)))];
     if (view.line && !lines.some((l) => l.toLowerCase() === view.line.toLowerCase())) continue;
@@ -144,22 +184,23 @@ function render() {
       const dep = depotOf(trips, run);
       if (dep) depots.add(dep);
       if (view.depot && dep !== view.depot) continue;
-      const t = out ? mins(run.start) : mins(run.end);
-      if (t < view.from * 60 || t > view.to * 60) continue;
+      const rm = rimessaRun(trips, run, day.rimessa);
+      const t = out ? rm.out : rm.inn; // orario di uscita dalla / rientro in rimessa
+      if (t < view.from * 60 || t > view.to * 60 + (view.to >= 24 ? 360 : 0)) continue;
       // filtro per capolinea (es. "mancini"): dove finisce il servizio (rientri) o dove comincia (uscite)
       if (view.place && !norm(out ? run.startPlace : run.endPlace).includes(norm(view.place))) continue;
       let live = '', expected = null, state;
       if (out) {
-        state = t < now ? 'done' : 'later';
+        state = now < 0 ? 'later' : t < now ? 'done' : 'later';
         if (v && ci >= run.first && ci <= run.idx) { state = 'on'; live = 'in servizio'; }
       } else {
         if (v && ci === run.idx) {
           const d = C.delayOf ? C.delayOf(v) : null;
           if (d != null) { expected = t + d; live = d <= -1 ? `in anticipo di ${-d} min` : d >= 2 ? `in ritardo di ${d} min` : 'in orario'; } else live = "sull'ultima corsa";
         } else if (v && ci > run.idx && ci <= run.idx + run.colls) live = 'sta rientrando ora';
-        state = live ? 'on' : t < now ? 'done' : mins(run.start) > now ? 'later' : 'on';
+        state = now < 0 ? 'later' : live ? 'on' : t < now ? 'done' : mins(run.start) > now ? 'later' : 'on';
       }
-      rows.push({ b, run, t, dep, live, expected, state, v: state === 'done' || (out && state === 'later') ? null : v,
+      rows.push({ b, run, t, rm, dep, live, expected, state, v: state === 'done' || (out && state === 'later') ? null : v,
         line: lines.length > 1 ? lines.join(' › ') : run.line });
     }
   }
@@ -167,14 +208,15 @@ function render() {
   const pending = rows.filter((r) => r.state !== 'done');
   const row = (r) => {
     const R = r.run;
-    const time = out ? R.start : R.end;
+    const f = out ? r.rm.outF : r.rm.inF;
+    const time = tilde(f) + hmS(r.t);
     const place = out ? R.startPlace : R.endPlace;
     const coll = out ? R.before : R.after;
-    const collTxt = coll
-      ? (out ? `esce alle <b>${esc(coll[1])}</b> con ${esc(coll[3])} da ${esc(coll[4])}` : `poi ${esc(coll[3])} → ${esc(coll[5])}`)
-      : 'senza collegamento';
+    const gap = Math.abs(out ? mins(R.start) - r.t : r.t - mins(R.end));
+    const collTxt = (out ? `in linea alle <b>${esc(h24(R.start))}</b>` : `fine servizio <b>${esc(h24(R.end))}</b>`)
+      + (coll ? ` · ${esc(coll[3])}` : f === 3 ? ' · tempo dal deposito sconosciuto' : gap ? ` · ${f >= 2 ? 'circa ' : ''}${gap} min ${out ? 'dal' : 'al'} deposito${f >= 2 ? ' (stima)' : ''}` : '');
     return `<li class="rn-${r.state}" data-b="${esc(r.b)}" data-v="${r.v ? esc(r.v.id) : ''}">
-      <div class="rn-time">${r.expected != null ? `<span class="rn-exp">${hm(r.expected)}</span><s>${esc(time)}</s>` : esc(time)}</div>
+      <div class="rn-time">${r.expected != null ? `<span class="rn-exp">${hm(r.expected + (r.t - mins(R.end)))}</span><s>${esc(time)}</s>` : esc(time)}</div>
       ${C.badge(r.line, C.colorOf({ line: r.line.split(' ')[0] }))}
       <div class="grow"><div class="title">${out ? 'da' : 'a'} ${esc(place)}</div>
         <div class="muted"><b>${esc(tabName(r.b))}</b> · ${collTxt}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
@@ -200,32 +242,36 @@ function render() {
       <button class="dir-tab${out ? '' : ' on'}" data-tab="rientri"><b>Rientri</b></button>
       <button class="dir-tab${out ? ' on' : ''}" data-tab="uscite"><b>Uscite</b></button>
     </div>
-    <p class="sub">${out ? 'Inizio servizio' : 'Fine servizio'} tra le ${view.from} e le ${view.to}${view.line ? `, linea ${esc(view.line)}` : ''}${view.depot ? ', ' + esc(depotName(view.depot)) : ''}: ${pending.length} ${out ? 'ancora da uscire o in corso' : 'ancora da rientrare'}.</p>
+    <p class="sub"><b>${dayLabel(view.date)}</b> · ${out ? 'Uscite dalla rimessa' : 'Rientri in rimessa'} ${view.from === 0 && view.to === 24 ? 'di tutta la giornata' : `tra le ${view.from} e le ${view.to}`}${view.line ? `, linea ${esc(view.line)}` : ''}${view.depot ? ', ' + esc(depotName(view.depot)) : ''}: ${pending.length} ${out ? 'ancora da uscire o in corso' : 'ancora da rientrare'}.</p>
     <form id="rnForm" class="rn-form">
+      <select id="rnDate">${[todayISO(), ...(dayIndex || []).filter((d) => d > todayISO())].map((d) => `<option value="${d === todayISO() ? '' : d}"${(view.date || '') === (d === todayISO() ? '' : d) ? ' selected' : ''}>${dayLabel(d)}</option>`).join('')}</select>
       <input id="rnLine" value="${esc(view.line)}" placeholder="Linea (tutte)" autocomplete="off">
       <input id="rnPlace" value="${esc(view.place)}" placeholder="Capolinea (es. Mancini)" autocomplete="off">
       <select id="rnDepot"><option value="">Tutti i depositi</option>${[...depots].sort().map((d) => `<option value="${d}"${d === view.depot ? ' selected' : ''}>${esc(DEPOT_NAMES[d] || 'Deposito ' + d)}</option>`).join('')}</select>
       <select id="rnFrom">${opts(25, view.from)}</select><span>–</span><select id="rnTo">${opts(25, view.to)}</select>
       <button class="btn ghost" type="submit">Filtra</button>
       <button class="btn ghost" type="button" id="rnNow">Prossime 2 ore</button>
+      <button class="btn ghost" type="button" id="rnAll">Tutto il giorno</button>
     </form>
     ${rows.length ? `<ul class="rows">${rows.map(row).join('')}</ul>` : '<p class="muted">Nessuna tabella in questa fascia.</p>'}
-    <p class="muted">${out ? "L'orario è l'inizio della prima corsa; se c'è un collegamento è indicata anche l'ora di uscita dal deposito." : "L'orario è la fine dell'ultima corsa di servizio; il bus spesso rientra prima se arriva in anticipo (vedi stato in diretta)."}
+    <p class="muted">L'orario è ${out ? "l'uscita dalla rimessa" : 'il rientro in rimessa'}: preciso quando c'è il collegamento, altrimenti calcolato col tempo deposito-capolinea (con ≈ quando è una stima dalla distanza).${out ? '' : ' Il bus spesso rientra prima se arriva in anticipo (vedi stato in diretta).'}
       Il deposito delle linee senza collegamento è dedotto dalle altre tabelle della stessa linea.</p>`;
-  el.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { view.tab = b.dataset.tab; store('rientriVista', view); render(); }; });
+  el.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { view.tab = b.dataset.tab; store('rientriVista2', view); render(); }; });
   document.getElementById('rnForm').onsubmit = (e) => {
     e.preventDefault();
-    view = { ...view, line: document.getElementById('rnLine').value.trim(), depot: document.getElementById('rnDepot').value, place: document.getElementById('rnPlace').value.trim(),
+    view = { ...view, date: document.getElementById('rnDate').value, line: document.getElementById('rnLine').value.trim(), depot: document.getElementById('rnDepot').value, place: document.getElementById('rnPlace').value.trim(),
       from: +document.getElementById('rnFrom').value, to: +document.getElementById('rnTo').value };
-    store('rientriVista', view);
+    store('rientriVista2', view);
     render();
   };
   document.getElementById('rnNow').onclick = () => {
     const h = new Date().getHours();
-    view = { ...view, from: h, to: Math.min(24, h + 2), place: document.getElementById('rnPlace').value.trim(), line: document.getElementById('rnLine').value.trim() };
-    store('rientriVista', view);
+    view = { ...view, date: '', from: h, to: Math.min(24, h + 2), place: document.getElementById('rnPlace').value.trim(), line: document.getElementById('rnLine').value.trim() };
+    store('rientriVista2', view);
     render();
   };
+  document.getElementById('rnAll').onclick = () => { view = { ...view, from: 0, to: 24 }; store('rientriVista2', view); render(); };
+  document.getElementById('rnDate').onchange = (e) => { view = { ...view, date: e.target.value }; store('rientriVista2', view); render(); };
   el.querySelectorAll('li[data-b]').forEach((li) => {
     li.onclick = (e) => {
       if (e.target.closest('[data-tab-open]')) { openTabella(li.dataset.b); return; }
@@ -242,8 +288,9 @@ function render() {
 export const blocksNow = () => blocks || {};
 export async function openTabella(b, highlightTrip) {
   await loadBlocks();
-  const trips = blocks[b];
+  const trips = tripsOf(b);
   if (!trips) { C.toast && C.toast('Tabella non trovata nei dati di oggi'); return; }
+  const dayR = blocks[b] ? rim : (Object.values(dayCache).find((d) => d.blocks && d.blocks[b]) || {}).rimessa;
   const v = vehiclesByBlock().get(b);
   const cur = highlightTrip || (v && v.tripId);
   const runs = runsOf(trips);
@@ -265,8 +312,8 @@ export async function openTabella(b, highlightTrip) {
   const first = runs[0], last = runs[runs.length - 1];
   const svc = trips.filter((t, i) => !(isColl(t[3]) || ((i === 0 || i === trips.length - 1) && DEPOT_STOPS.has(t[i === 0 ? 4 : 5]))));
   const capAnd = svc.length ? svc[0][4] : first.startPlace, capRit = svc.length ? svc[svc.length - 1][5] : last.endPlace;
-  const outT = first.before ? first.before[1] : trips[0][1];
-  const inT = last.after ? last.after[2] : trips[trips.length - 1][2];
+  const rmF = rimessaRun(trips, first, dayR), rmL = rimessaRun(trips, last, dayR);
+  const outT = tilde(rmF.outF) + hmS(rmF.out), inT = tilde(rmL.inF) + hmS(rmL.inn);
   const totalMin = trips.reduce((a, t) => a + mins(t[2]) - mins(t[1]), 0);
   C.openSheet(`
     <div class="tb-sheet">
