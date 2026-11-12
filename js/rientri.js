@@ -18,7 +18,7 @@ const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStor
 export const isColl = (line) => /^[A-Z]\d{2}$/.test(String(line || ''));
 const DEPOT_NAMES = { G: 'Grottarossa', M: 'Magliana', P: 'Portonaccio', T: 'Tor Vergata', A: 'Prenestina' };
 
-let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null;
+let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null, veri = {};
 const dayCache = {}; // 'AAAA-MM-GG' -> { blocks, rimessa }
 let dayIndex = null;
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -39,10 +39,13 @@ function tripsOf(b) {
 // f: 0 = vero (collegamento o fermata del deposito), 1 = dal tempo di un collegamento vicino, 2 = stima dalla distanza
 export function rimessaRun(trips, run, R = rim) {
   const D = depotOf(trips, run);
-  const tab = (R && R.tempi && R.tempi[D]) || {};
-  // minuti a strade libere x fattore del traffico dell'ora (dagli orari ATAC)
   const F = (R && R.fattoreOra) || [];
-  const dur = (e, at) => (e[1] === 0 ? 0 : Math.round(e[0] * (F[Math.floor(at / 60) % 24] || 1)));
+  const fh = (h) => F[h % 24] || 1;
+  // tempi veri comunicati dagli autisti (riportati "a strade libere" col fattore dell'ora in cui sono stati misurati)
+  const tab = { ...((R && R.tempi && R.tempi[D]) || {}) };
+  for (const [p, [m, h]] of Object.entries((veri && veri[D]) || {})) tab[p] = [m / fh(h), 1];
+  // minuti a strade libere x fattore del traffico dell'ora (dagli orari ATAC)
+  const dur = (e, at) => (e[1] === 0 ? 0 : Math.round(e[0] * fh(Math.floor(at / 60))));
   let out, outF, inn, inF;
   if (run.before) { out = mins(run.before[1]); outF = 0; }
   else if (tab[run.startPlace]) { out = mins(run.start) - dur(tab[run.startPlace], mins(run.start)); outF = tab[run.startPlace][1]; }
@@ -54,12 +57,14 @@ export function rimessaRun(trips, run, R = rim) {
 }
 const hmS = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
 const tilde = (f) => (f >= 2 ? '≈' : '');
+const tildeH = (f) => (f >= 2 ? '<span class="approx">≈</span>' : '');
 const DEPOT_STOPS = new Set();
 export async function loadBlocks() {
   if (blocks) return blocks;
   try { blocks = await (await fetch('data/blocks.json', { cache: 'no-cache' })).json(); } catch (e) { blocks = {}; }
   try { names = await (await fetch('data/tabelle.json', { cache: 'no-cache' })).json(); } catch (e) { names = {}; }
   try { rim = await (await fetch('data/rimessa.json', { cache: 'no-cache' })).json(); } catch (e) { rim = null; }
+  try { veri = await (await fetch('data/tempi_veri.json', { cache: 'no-cache' })).json(); } catch (e) { veri = {}; }
   Object.assign(names, store('tabelleNomi') || {});
   // dove si trova ogni deposito: la fermata più frequente tra le estremità dei suoi collegamenti
   const count = {};
@@ -213,14 +218,14 @@ async function render() {
   const row = (r) => {
     const R = r.run;
     const f = out ? r.rm.outF : r.rm.inF;
-    const time = tilde(f) + hmS(r.t);
+    const time = hmS(r.t);
     const place = out ? R.startPlace : R.endPlace;
     const coll = out ? R.before : R.after;
     const gap = Math.abs(out ? mins(R.start) - r.t : r.t - mins(R.end));
     const collTxt = (out ? `in linea alle <b>${esc(h24(R.start))}</b>` : `fine servizio <b>${esc(h24(R.end))}</b>`)
       + (coll ? ` · ${esc(coll[3])}` : f === 3 ? ' · tempo dal deposito sconosciuto' : gap ? ` · ${f >= 2 ? 'circa ' : ''}${gap} min ${out ? 'dal' : 'al'} deposito${f >= 2 ? ' (stima)' : ''}` : '');
     return `<li class="rn-${r.state}" data-b="${esc(r.b)}" data-v="${r.v ? esc(r.v.id) : ''}">
-      <div class="rn-time">${r.expected != null ? `<span class="rn-exp">${hm(r.expected + (r.t - mins(R.end)))}</span><s>${esc(time)}</s>` : esc(time)}</div>
+      <div class="rn-time">${r.expected != null ? `<span class="rn-exp">${hm(r.expected + (r.t - mins(R.end)))}</span><s>${esc(time)}</s>` : tildeH(f) + esc(time)}</div>
       ${C.badge(r.line, C.colorOf({ line: r.line.split(' ')[0] }))}
       <div class="grow"><div class="title">${out ? 'da' : 'a'} ${esc(place)}</div>
         <div class="muted"><b>${esc(tabName(r.b))}</b> · ${collTxt}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
