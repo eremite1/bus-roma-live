@@ -357,6 +357,27 @@ def main():
                             line_dep[u[3]][t[3][0]] += 1
                     break
         dpos = {D: stop_pos.get(max(c, key=c.get)) for D, c in depot_stop.items()}
+        # fattore orario del traffico: quanto durano le corse a ogni ora rispetto alla loro durata tipica
+        # (dagli orari ATAC stessi: nelle ore di punta le corse sono programmate più lunghe)
+        by_key = defaultdict(list)
+        for trips_ in bl.values():
+            for t in trips_:
+                if not is_coll(t[3]):
+                    d_ = mins(t[2]) - mins(t[1])
+                    if d_ > 0:
+                        by_key[(t[3], t[6], t[7])].append((mins(t[1]) // 60, d_))
+        ratios = defaultdict(list)
+        for v in by_key.values():
+            if len(v) < 4:
+                continue
+            med = median(x[1] for x in v)
+            for h, d_ in v:
+                ratios[h % 24].append(d_ / med)
+        fatt = [round(median(ratios[h]), 3) if len(ratios[h]) > 20 else None for h in range(24)]
+        known = [f for f in fatt if f]
+        base = min(known) if known else 1.0  # ora più scorrevole = 1
+        fatt = [round((f or base) / base, 3) for f in fatt]
+        fh = lambda m: fatt[(m // 60) % 24]
         for trips_ in bl.values():
             for t in trips_:
                 if not is_coll(t[3]):
@@ -368,10 +389,10 @@ def main():
                 for sid in (t[6], t[7]):
                     p = stop_pos.get(sid)
                     if p and km(p, dpos[D]) > 0.4:
-                        coll_min[(D, sid)].append(dur)
-                        speed.append(dur / max(km(p, dpos[D]), 0.5))
-        k = median(speed) if speed else 3.0  # minuti per km in linea d'aria
-        out = {"depositi": {D: list(p) for D, p in dpos.items() if p}, "lineaDeposito": {}, "tempi": {}}
+                        coll_min[(D, sid)].append(dur / fh(mins(t[1])))  # tempo "a strade libere"
+                        speed.append(dur / fh(mins(t[1])) / max(km(p, dpos[D]), 0.5))
+        k = median(speed) if speed else 3.0  # minuti per km in linea d'aria, a strade libere
+        out = {"depositi": {D: list(p) for D, p in dpos.items() if p}, "lineaDeposito": {}, "tempi": {}, "fattoreOra": fatt}
         for L, c in line_dep.items():
             out["lineaDeposito"][L] = max(c, key=c.get)
         coll_pos = defaultdict(list)
@@ -393,7 +414,8 @@ def main():
                         tab[name] = [0, 0]  # fermata del deposito
                         continue
                     near = [m for q, m in coll_pos[D] if km(q, p) < 0.5]
-                    tab[name] = [round(median(near)), 1] if near else [round(3 + dist * k), 2]
+                    # minuti a strade libere: l'app li moltiplica per il fattore dell'ora
+                    tab[name] = [round(median(near), 1), 1] if near else [round(2 + dist * k, 1), 2]
         out["minutiPerKm"] = round(k, 2)
         return out
 

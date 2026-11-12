@@ -40,12 +40,15 @@ function tripsOf(b) {
 export function rimessaRun(trips, run, R = rim) {
   const D = depotOf(trips, run);
   const tab = (R && R.tempi && R.tempi[D]) || {};
+  // minuti a strade libere x fattore del traffico dell'ora (dagli orari ATAC)
+  const F = (R && R.fattoreOra) || [];
+  const dur = (e, at) => (e[1] === 0 ? 0 : Math.round(e[0] * (F[Math.floor(at / 60) % 24] || 1)));
   let out, outF, inn, inF;
   if (run.before) { out = mins(run.before[1]); outF = 0; }
-  else if (tab[run.startPlace]) { out = mins(run.start) - tab[run.startPlace][0]; outF = tab[run.startPlace][1]; }
+  else if (tab[run.startPlace]) { out = mins(run.start) - dur(tab[run.startPlace], mins(run.start)); outF = tab[run.startPlace][1]; }
   else { out = mins(run.start); outF = 3; }
   if (run.after) { inn = mins(trips[run.idx + run.colls][2]); inF = 0; }
-  else if (tab[run.endPlace]) { inn = mins(run.end) + tab[run.endPlace][0]; inF = tab[run.endPlace][1]; }
+  else if (tab[run.endPlace]) { inn = mins(run.end) + dur(tab[run.endPlace], mins(run.end)); inF = tab[run.endPlace][1]; }
   else { inn = mins(run.end); inF = 3; }
   return { out, outF, inn, inF, D };
 }

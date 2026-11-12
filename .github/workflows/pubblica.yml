@@ -53,6 +53,10 @@ jobs:
         run: |
           mkdir -p _site
           cp -r index.html config.js css js data _site/
+          # versione nei nomi dei file: telefoni e browser scaricano subito il codice nuovo
+          V=${GITHUB_SHA::8}
+          sed -i -E "s#(src|href)=\"(js|css)/([^\"?]+)\"#\1=\"\2/\3?v=$V\"#g" _site/index.html
+          sed -i -E "s#from '\./([^'?]+\.js)'#from './\1?v=$V'#g; s#import\('\./([^'?]+\.js)'\)#import('./\1?v=$V')#g" _site/js/*.js
           [ -f favicon.svg ] && cp favicon.svg _site/ || true
 
       - uses: actions/configure-pages@v5

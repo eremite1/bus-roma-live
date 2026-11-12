@@ -269,8 +269,12 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); if (::web.isInitialized) web.saveState(outState) }
 
     private var primoResume = true
+    private var ultimaPausa = 0L
+    override fun onPause() { super.onPause(); ultimaPausa = System.currentTimeMillis() }
     override fun onResume() {
         super.onResume()
+        // se l'app è rimasta in background a lungo, ricarico la mappa: così arrivano le novità
+        if (!primoResume && ::web.isInitialized && System.currentTimeMillis() - ultimaPausa > 5 * 60_000) web.reload()
         // aggiornamento obbligatorio: se l'utente è uscito dall'installazione, il messaggio ricompare
         if (!primoResume) Updater.check(this, quiet = true)
         primoResume = false
