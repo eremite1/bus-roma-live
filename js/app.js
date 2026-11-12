@@ -572,7 +572,11 @@ function showVehicle(v) {
     const g = v.ghost || {};
     const min = Math.round(age / 60), dur = min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
     const hhmm = new Date(v.ts * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    facts.push(`<span class="late">⚫ Vettura <b>${esc(v.vehicleNo)}</b> spenta: non trasmette da <b>${dur}</b> (ultimo segnale ${hhmm})</span>`);
+    const rie = String(g.rientro || '').replace(/^(\d+):/, (x, h) => String(+h % 24).padStart(2, '0') + ':');
+    facts.push(`<span class="late">${g.tipo === 'recupero' ? '🟣' : '⚫'} Vettura <b>${esc(v.vehicleNo)}</b> spenta: non trasmette da <b>${dur}</b> (ultimo segnale ${hhmm})</span>`);
+    facts.push(g.tipo === 'recupero'
+      ? `<b>Da recuperare</b>: ${g.next ? 'la tabella finisce alle ' + esc(rie) : 'la tabella è finita (rientro previsto ' + esc(rie) + ')'} ma la vettura non è in deposito`
+      : `<b>In sosta</b>: la tabella ha servizio fino alle ${esc(rie)}, potrebbe ripartire`);
     if (g.cur) facts.push(`Ultima corsa ${esc(g.cur[1])} ${esc(g.cur[4])} → ${esc(g.cur[5])}`);
     if (g.next) facts.push(`Corsa successiva prevista ${esc(g.next[1])} da ${esc(g.next[4])}`);
   } else if (v.source === 'gps') {

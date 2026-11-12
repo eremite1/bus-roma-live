@@ -183,7 +183,19 @@ function render() {
         <button class="link-btn" data-tab-open>tabella</button></div></li>`;
   };
   const opts = (n, sel) => Array.from({ length: n }, (_, h) => `<option${h === sel ? ' selected' : ''}>${h}</option>`).join('');
+  const ghosts = out ? [] : [...C.state.shown.values()].map((x) => x.v).filter((v) => v.spento && v.ghost && v.ghost.tipo === 'recupero'
+    && (!view.line || String(v.line).toLowerCase() === view.line.toLowerCase()) && (!view.depot || v.ghost.dep === view.depot));
+  const ghostRow = (v) => {
+    const g = v.ghost, min = Math.round((Date.now() / 1000 - v.ts) / 60);
+    return `<li data-ghost="${esc(v.id)}"><div class="rn-time">${esc(g.rientro.replace(/^(\d+):/, (x, h) => String(+h % 24).padStart(2, '0') + ':'))}</div>
+      ${C.badge(v.line, '#7C3AED')}<div class="grow"><div class="title">ferma verso ${esc(g.cur[5])}</div>
+      <div class="muted"><b>${esc(g.name)}</b> · spenta da ${min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min'}${g.dep ? ' · ' + esc(depotName(g.dep)) : ''}</div></div>
+      <div class="when"><span class="rn-car">${esc(v.vehicleNo)}</span></div></li>`;
+  };
   el.innerHTML = `
+    ${ghosts.length ? `<div class="section-title">🟣 Vetture da recuperare (${ghosts.length})</div>
+      <p class="muted">Spente fuori deposito con la tabella finita o che finisce entro 2 ore. L'orario è il rientro previsto.</p>
+      <ul class="rows">${ghosts.map(ghostRow).join('')}</ul>` : ''}
     <div class="dir-tabs">
       <button class="dir-tab${out ? '' : ' on'}" data-tab="rientri"><b>Rientri</b></button>
       <button class="dir-tab${out ? ' on' : ''}" data-tab="uscite"><b>Uscite</b></button>
@@ -220,6 +232,9 @@ function render() {
       const v = li.dataset.v && C.vehicleById(li.dataset.v);
       if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } else openTabella(li.dataset.b);
     };
+  });
+  el.querySelectorAll('li[data-ghost]').forEach((li) => {
+    li.onclick = () => { const v = C.vehicleById(li.dataset.ghost); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 16); } };
   });
 }
 
@@ -338,21 +353,25 @@ export function ipotesi(b) {
   return msg + '. Confrontala col numero vero: se è diversa, dimmelo!';
 }
 
-// Vettura che non trasmette più: la mostro solo se la sua tabella aveva ancora corse dopo l'ultimo segnale
-// (turno scoperto / vettura lasciata in sosta). Se aveva finito o rientrava in deposito, no.
+// Vettura che non trasmette più. Due casi utili agli autisti:
+//  "riprende": la tabella ha ancora servizio oltre le prossime 2 ore -> in sosta, potrebbe ripartire
+//  "recupero": la tabella finisce entro 2 ore (o è già finita) ma la vettura non è in deposito -> da recuperare
+// Non la mostro se era già in deposito (rientro col collegamento o arrivo alla fermata del deposito).
 export function ghostInfo(v) {
   if (!blocks || !v.tripId || !String(v.tripId).includes('-')) return null;
   const b = String(v.tripId).replace(/-[^-]*$/, '');
   const trips = blocks[b];
   if (!trips) return null;
-  const d = new Date(v.ts * 1000);
-  let M = d.getHours() * 60 + d.getMinutes();
-  if (M < 240) M += 1440;
-  const mm = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
   const cur = trips.find((t) => t[0] === v.tripId);
-  // corse che restavano da fare: dopo la corsa in corso (se nota) o dopo l'ora dell'ultimo segnale
-  const rest = cur ? trips.slice(trips.indexOf(cur) + 1) : trips.filter((t) => mm(t[1]) >= M - 2);
-  const next = rest.find((t) => !isColl(t[3]));
-  if (!next) return null; // tabella finita o stava rientrando in deposito
-  return { b, name: tabName(b), cur, next };
+  if (!cur) return null;
+  const i = trips.indexOf(cur);
+  if (DEPOT_STOPS.has(cur[5])) return null; // arrivata al deposito
+  if (isColl(cur[3]) && i > 0 && !isColl(trips[i - 1][3])) return null; // collegamento verso il deposito
+  const now = new Date();
+  let N = now.getHours() * 60 + now.getMinutes();
+  if (N < 240) N += 1440;
+  const rientro = mins(trips[trips.length - 1][2]);
+  const next = trips.slice(i + 1).find((t) => !isColl(t[3])) || null;
+  const tipo = !next || rientro - N <= 120 ? 'recupero' : 'riprende';
+  return { b, name: tabName(b), cur, next, rientro: trips[trips.length - 1][2], tipo, dep: depotOf(trips, runsOf(trips).slice(-1)[0]) };
 }

@@ -72,10 +72,11 @@ export const PALETTE = {
   rail: '#0B6E4F',
   other: '#555B66',
   spento: '#1B1D22',
+  recupero: '#7C3AED',
 };
 
-export function kindOf({ type, mode, line, spento }) {
-  if (spento) return 'spento';
+export function kindOf({ type, mode, line, spento, ghost }) {
+  if (spento) return ghost && ghost.tipo === 'recupero' ? 'recupero' : 'spento';
   const name = String(line || '');
   if (/^n\d/i.test(name)) return 'night';
   if (mode) {
