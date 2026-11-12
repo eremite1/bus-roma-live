@@ -115,33 +115,44 @@ class MainActivity : Activity() {
     }
 
     private fun benvenuto(): View {
-        val box = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#1B1D22")) }
-        box.addView(ImageView(this).apply {
-            setImageResource(R.drawable.benvenuto)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val fascia = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(48, 64, 48, 120)
-            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(Color.parseColor("#E61B1D22"), Color.TRANSPARENT))
+        val dp = resources.displayMetrics.density
+        val box = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#A51C45"), Color.parseColor("#6E0F2B")))
         }
-        fascia.addView(TextView(this).apply {
-            text = "Benvenuti!"
-            textSize = 46f
-            setTypeface(typeface, Typeface.BOLD)
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        col.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) },
+            LinearLayout.LayoutParams((120 * dp).toInt(), (120 * dp).toInt()))
+        col.addView(TextView(this).apply {
+            text = "Benvenuti"
+            textSize = 40f
+            setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setShadowLayer(12f, 0f, 3f, Color.BLACK)
+            setPadding(0, (24 * dp).toInt(), 0, 0)
         })
-        fascia.addView(TextView(this).apply {
-            text = "Bus Roma Live · versione ${Updater.currentName(this@MainActivity)}"
-            textSize = 15f
+        col.addView(TextView(this).apply {
+            text = "Bus Roma Live"
+            textSize = 20f
             setTextColor(Color.parseColor("#F2B33D"))
             gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 0)
+            setPadding(0, (6 * dp).toInt(), 0, 0)
         })
-        box.addView(fascia, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        col.addView(TextView(this).apply {
+            text = "Mappa in tempo reale dei bus di Roma"
+            textSize = 14f
+            setTextColor(Color.parseColor("#E8D3DA"))
+            gravity = Gravity.CENTER
+            setPadding(0, (4 * dp).toInt(), 0, 0)
+        })
+        box.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        box.addView(TextView(this).apply {
+            text = "versione ${Updater.currentName(this@MainActivity)} · dati aperti Roma Mobilità\nApp non ufficiale, non collegata ad ATAC"
+            textSize = 12f
+            setTextColor(Color.parseColor("#D9B8C3"))
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, (36 * dp).toInt())
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         return box
     }
 
