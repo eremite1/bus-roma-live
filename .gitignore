@@ -3,3 +3,4 @@ __pycache__/
 test/*.pb
 test/vehicles_spec.json
 node_modules/
+data/giorni/

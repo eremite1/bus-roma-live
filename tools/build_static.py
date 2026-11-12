@@ -168,6 +168,14 @@ def main():
         if t.get("service_id") in services and t.get("route_id") in routes:
             trips[t["trip_id"]] = t
     log("Corse attive:", len(trips))
+    # per le tabelle servono anche i prossimi 7 giorni (scelta del giorno in Rientri/Uscite)
+    week = [today + timedelta(days=i) for i in range(0, 7)]
+    week_services = {d: active_services(z, [d]) for d in week}
+    all_week = set().union(*week_services.values())
+    btrips = {}
+    for t in rows(z, "trips.txt"):
+        if t.get("service_id") in all_week and t.get("route_id") in routes:
+            btrips[t["trip_id"]] = t
     if not trips:
         raise SystemExit("Nessuna corsa attiva trovata: il GTFS potrebbe essere scaduto.")
 
@@ -183,7 +191,7 @@ def main():
     first_stop = {}  # per le tabelle: orario e fermata di partenza di ogni corsa
     for st in rows(z, "stop_times.txt"):
         tid = st.get("trip_id")
-        if tid in trips:
+        if tid in trips or tid in btrips:
             seq = int(st.get("stop_sequence") or 0)
             cur = last_stop.get(tid)
             if cur is None or seq > cur[0]:
@@ -293,24 +301,122 @@ def main():
     dump("shapes.json", shapes)
     dump("linestops.json", linestops)
 
-    # --- tabelle (turni macchina): tutte le corse fatte dallo stesso bus nella giornata di oggi ---
+    # --- tabelle (turni macchina): tutte le corse fatte dallo stesso bus nella giornata ---
     # ATAC non usa la colonna block_id: la tabella è la parte del codice corsa prima dell'ultimo "-"
     # (es. "0#3737-5" -> tabella "0#3737", corsa n. 5).
-    today_services = active_services(z, [today])
     hm = lambda t: t[:5] if len(t) >= 5 else t
-    blocks = defaultdict(list)
-    for tid, t in trips.items():
-        if t.get("service_id") not in today_services or tid not in first_stop:
+    import re as _re
+    is_coll = lambda n: bool(_re.fullmatch(r"[A-Z]\d{2}", n or ""))
+
+    def make_blocks(svcs):
+        bl = defaultdict(list)
+        for tid, t in btrips.items():
+            if t.get("service_id") not in svcs or tid not in first_stop:
+                continue
+            key = t.get("block_id") or (tid.rsplit("-", 1)[0] if "#" in tid and "-" in tid else "")
+            if not key:
+                continue
+            f, l = first_stop[tid], last_stop.get(tid, (0, "", ""))
+            bl[key].append([tid, hm(f[2]), hm(l[2]), routes[t["route_id"]]["n"], nice(stop_names.get(f[1], "")),
+                            nice(stop_names.get(l[1], "")), f[1], l[1]])
+        for v in bl.values():
+            v.sort(key=lambda c: c[1].zfill(5))
+        return bl
+
+    def mins(t):
+        h, m = t.split(":")[:2]
+        return int(h) * 60 + int(m)
+
+    def km(a, b):
+        from math import radians, cos, sqrt
+        dx = (a[0] - b[0]) * 111.32 * cos(radians((a[1] + b[1]) / 2))
+        dy = (a[1] - b[1]) * 110.57
+        return sqrt(dx * dx + dy * dy)
+
+    def rimessa(bl):
+        """Tempi deposito <-> capolinea per ogni deposito (lettera del collegamento):
+        dai collegamenti veri quando esistono, altrimenti stimati dalla distanza."""
+        from statistics import median
+        depot_stop = defaultdict(lambda: defaultdict(int))
+        coll_min = defaultdict(list)  # (deposito, fermata) -> minuti
+        speed = []
+        line_dep = defaultdict(lambda: defaultdict(int))
+        for trips_ in bl.values():
+            for i, t in enumerate(trips_):
+                if not is_coll(t[3]):
+                    continue
+                D = t[3][0]
+                # uscita: il collegamento parte dal deposito; rientro: ci arriva
+                exit_ = i + 1 < len(trips_) and not is_coll(trips_[i + 1][3])
+                dstop, other = (t[6], t[7]) if exit_ else (t[7], t[6])
+                depot_stop[D][dstop] += 1
+            for t in trips_:
+                if is_coll(t[3]):
+                    for u in trips_:
+                        if not is_coll(u[3]):
+                            line_dep[u[3]][t[3][0]] += 1
+                    break
+        dpos = {D: stop_pos.get(max(c, key=c.get)) for D, c in depot_stop.items()}
+        for trips_ in bl.values():
+            for t in trips_:
+                if not is_coll(t[3]):
+                    continue
+                D = t[3][0]
+                dur = mins(t[2]) - mins(t[1])
+                if dur <= 0 or not dpos.get(D):
+                    continue
+                for sid in (t[6], t[7]):
+                    p = stop_pos.get(sid)
+                    if p and km(p, dpos[D]) > 0.4:
+                        coll_min[(D, sid)].append(dur)
+                        speed.append(dur / max(km(p, dpos[D]), 0.5))
+        k = median(speed) if speed else 3.0  # minuti per km in linea d'aria
+        out = {"depositi": {D: list(p) for D, p in dpos.items() if p}, "lineaDeposito": {}, "tempi": {}}
+        for L, c in line_dep.items():
+            out["lineaDeposito"][L] = max(c, key=c.get)
+        coll_pos = defaultdict(list)
+        for (D, sid), v in coll_min.items():
+            if stop_pos.get(sid):
+                coll_pos[D].append((stop_pos[sid], median(v)))
+        for trips_ in bl.values():
+            D = next((t[3][0] for t in trips_ if is_coll(t[3])), None) or out["lineaDeposito"].get(next((t[3] for t in trips_ if not is_coll(t[3])), ""))
+            if not D or not dpos.get(D):
+                continue
+            tab = out["tempi"].setdefault(D, {})
+            for t in trips_:
+                for sid, name in ((t[6], t[4]), (t[7], t[5])):
+                    if name in tab or not stop_pos.get(sid):
+                        continue
+                    p = stop_pos[sid]
+                    dist = km(p, dpos[D])
+                    if dist < 0.4:
+                        tab[name] = [0, 0]  # fermata del deposito
+                        continue
+                    near = [m for q, m in coll_pos[D] if km(q, p) < 0.5]
+                    tab[name] = [round(median(near)), 1] if near else [round(3 + dist * k), 2]
+        out["minutiPerKm"] = round(k, 2)
+        return out
+
+    def slim(bl):
+        return {b: [t[:6] for t in v] for b, v in bl.items()}
+
+    gdir = os.path.join(OUT, "giorni")
+    os.makedirs(gdir, exist_ok=True)
+    for f_ in os.listdir(gdir):
+        os.remove(os.path.join(gdir, f_))
+    index = []
+    for d in week:
+        bl = make_blocks(week_services[d])
+        if not bl:
             continue
-        key = t.get("block_id") or (tid.rsplit("-", 1)[0] if "#" in tid and "-" in tid else "")
-        if not key:
-            continue
-        f, l = first_stop[tid], last_stop.get(tid, (0, "", ""))
-        blocks[key].append([tid, hm(f[2]), hm(l[2]), routes[t["route_id"]]["n"], nice(stop_names.get(f[1], "")), nice(stop_names.get(l[1], ""))])
-    for v in blocks.values():
-        v.sort(key=lambda c: c[1].zfill(5))
-    log("Tabelle di oggi:", len(blocks))
-    dump("blocks.json", blocks)
+        rim = rimessa(bl)
+        if d == today:
+            log("Tabelle di oggi:", len(bl))
+            dump("blocks.json", slim(bl))
+            dump("rimessa.json", rim)
+        dump(f"giorni/{d.isoformat()}.json", {"blocks": slim(bl), "rimessa": rim})
+        index.append(d.isoformat())
+    dump("giorni/indice.json", index)
     dump("meta.json", {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": source,
