@@ -173,6 +173,7 @@ async function render() {
   const vb = day.today ? vehiclesByBlock() : new Map();
   const now = day.today ? new Date().getHours() * 60 + new Date().getMinutes() : -1;
   const out = view.tab === 'uscite';
+  const rec = view.tab === 'recupero';
   const GN = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
   const dayLabel = (d) => { if (!d || d === todayISO()) return 'Oggi'; const x = new Date(d + 'T12:00'); return `${GN[x.getDay()]} ${x.getDate()}/${x.getMonth() + 1}`; };
   const rows = [];
@@ -228,23 +229,34 @@ async function render() {
         <button class="link-btn" data-tab-open>tabella</button></div></li>`;
   };
   const opts = (n, sel) => Array.from({ length: n }, (_, h) => `<option${h === sel ? ' selected' : ''}>${h}</option>`).join('');
-  const ghosts = out ? [] : [...C.state.shown.values()].map((x) => x.v).filter((v) => v.spento && v.ghost && v.ghost.tipo === 'recupero'
+  const ghosts = !day.today ? [] : [...C.state.shown.values()].map((x) => x.v).filter((v) => v.spento && v.ghost
     && (!view.line || String(v.line).toLowerCase() === view.line.toLowerCase()) && (!view.depot || v.ghost.dep === view.depot));
   const ghostRow = (v) => {
     const g = v.ghost, min = Math.round((Date.now() / 1000 - v.ts) / 60);
     return `<li data-ghost="${esc(v.id)}"><div class="rn-time">${esc(g.rientro.replace(/^(\d+):/, (x, h) => String(+h % 24).padStart(2, '0') + ':'))}</div>
-      ${C.badge(v.line, '#7C3AED')}<div class="grow"><div class="title">ferma verso ${esc(g.cur[5])}</div>
-      <div class="muted"><b>${esc(g.name)}</b> · spenta da ${min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min'}${g.dep ? ' · ' + esc(depotName(g.dep)) : ''}</div></div>
+      ${C.badge(v.line, g.tipo === 'recupero' ? '#7C3AED' : '#1B1D22')}<div class="grow"><div class="title">ferma a ${esc(g.cur[5])} · doveva ripartire alle ${esc(g.missed)}</div>
+      <div class="muted"><b>${esc(g.name)}</b> · ${g.tipo === 'recupero' ? 'da recuperare' : 'in sosta, ha ancora servizio'} · spenta da ${min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min'}${g.dep ? ' · ' + esc(depotName(g.dep)) : ''}</div></div>
       <div class="when"><span class="rn-car">${esc(v.vehicleNo)}</span></div></li>`;
   };
-  el.innerHTML = `
-    ${ghosts.length ? `<div class="section-title">🟣 Vetture da recuperare (${ghosts.length})</div>
-      <p class="muted">Spente fuori deposito con la tabella finita o che finisce entro 2 ore. L'orario è il rientro previsto.</p>
-      <ul class="rows">${ghosts.map(ghostRow).join('')}</ul>` : ''}
-    <div class="dir-tabs">
-      <button class="dir-tab${out ? '' : ' on'}" data-tab="rientri"><b>Rientri</b></button>
+  const tabs = `<div class="dir-tabs">
+      <button class="dir-tab${!out && !rec ? ' on' : ''}" data-tab="rientri"><b>Rientri</b></button>
       <button class="dir-tab${out ? ' on' : ''}" data-tab="uscite"><b>Uscite</b></button>
-    </div>
+      <button class="dir-tab${rec ? ' on' : ''}" data-tab="recupero"><b>Ferme${ghosts.length ? ' (' + ghosts.length + ')' : ''}</b></button>
+    </div>`;
+  if (rec) {
+    ghosts.sort((a, b) => (a.ghost.tipo === b.ghost.tipo ? mins(a.ghost.rientro) - mins(b.ghost.rientro) : a.ghost.tipo === 'recupero' ? -1 : 1));
+    el.innerHTML = `${tabs}
+      <p class="sub">Vetture spente fuori deposito che dovevano già essere ripartite (oggi${view.line ? ', linea ' + esc(view.line) : ''}${view.depot ? ', ' + esc(depotName(view.depot)) : ''}).</p>
+      ${ghosts.length ? `<ul class="rows">${ghosts.map(ghostRow).join('')}</ul>` : '<p class="muted">Nessuna vettura ferma in questo momento.</p>'}
+      <p class="muted">🟣 da recuperare: la tabella finisce entro 2 ore · ⚫ in sosta: ha ancora servizio dopo. L'orario a sinistra è il rientro previsto della tabella. Le vetture compaiono 10-20 minuti dopo lo spegnimento; chi si spegne al capolinea aspettando la partenza non viene contato.</p>`;
+    el.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { view.tab = b.dataset.tab; store('rientriVista2', view); render(); }; });
+    el.querySelectorAll('li[data-ghost]').forEach((li) => {
+      li.onclick = () => { const v = C.vehicleById(li.dataset.ghost); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 16); } };
+    });
+    return;
+  }
+  el.innerHTML = `
+    ${tabs}
     <p class="sub"><b>${dayLabel(view.date)}</b> · ${out ? 'Uscite dalla rimessa' : 'Rientri in rimessa'} ${view.from === 0 && view.to === 24 ? 'di tutta la giornata' : `tra le ${view.from} e le ${view.to}`}${view.line ? `, linea ${esc(view.line)}` : ''}${view.depot ? ', ' + esc(depotName(view.depot)) : ''}: ${pending.length} ${out ? 'ancora da uscire o in corso' : 'ancora da rientrare'}.</p>
     <form id="rnForm" class="rn-form">
       <select id="rnDate">${[todayISO(), ...(dayIndex || []).filter((d) => d > todayISO())].map((d) => `<option value="${d === todayISO() ? '' : d}"${(view.date || '') === (d === todayISO() ? '' : d) ? ' selected' : ''}>${dayLabel(d)}</option>`).join('')}</select>
@@ -422,6 +434,12 @@ export function ghostInfo(v) {
   if (N < 240) N += 1440;
   const rientro = mins(trips[trips.length - 1][2]);
   const next = trips.slice(i + 1).find((t) => !isColl(t[3])) || null;
-  const tipo = !next || rientro - N <= 120 ? 'recupero' : 'riprende';
-  return { b, name: tabName(b), cur, next, rientro: trips[trips.length - 1][2], tipo, dep: depotOf(trips, runsOf(trips).slice(-1)[0]) };
+  // fine normale: ultima corsa fatta (poi è andata in deposito), oppure pausa lunga/rientro intermedio
+  if (!next) return null;
+  if (mins(next[1]) - mins(cur[2]) >= 60) return null;
+  // spegnersi al capolinea in attesa della partenza è normale: conta solo se la corsa successiva
+  // doveva già essere partita da almeno 5 minuti
+  if (N < mins(next[1]) + 5) return null;
+  const tipo = rientro - N <= 120 ? 'recupero' : 'riprende';
+  return { missed: next[1], b, name: tabName(b), cur, next, rientro: trips[trips.length - 1][2], tipo, dep: depotOf(trips, runsOf(trips).slice(-1)[0]) };
 }
