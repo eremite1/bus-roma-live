@@ -32,15 +32,27 @@ export class GpsSource {
     this.prev = new Map(); // id -> { lng, lat, bearing }
   }
 
+  async loadGhosts() {
+    if (this.ghostsAt && Date.now() - this.ghostsAt < 3 * 60_000) return;
+    this.ghostsAt = Date.now();
+    try {
+      const r = await fetch('https://raw.githubusercontent.com/eremite1/bus-roma-live/storico/spenti.json?t=' + Math.floor(Date.now() / 120000), { cache: 'no-store' });
+      if (r.ok) this.ghosts = (await r.json()).spenti || {};
+    } catch (e) { /* senza archivio mostro solo gli spenti presenti nel feed */ }
+  }
+
   async fetch() {
     const res = await fetch(this.url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Ponte GPS: risposta ' + res.status);
     const feed = decodeVehicleFeed(await res.arrayBuffer());
     const now = Date.now() / 1000;
     const list = [];
+    const seen = new Set();
     for (const v of feed.vehicles) {
-      // scarta posizioni vecchie di oltre 10 minuti (mezzo fermo in deposito / GPS spento)
-      if (v.timestamp && now - v.timestamp > 600) continue;
+      // oltre 10 minuti senza segnale = vettura SPENTA: la tengo (in nero) solo se il turno non era finito
+      const spento = !!(v.timestamp && now - v.timestamp > 600);
+      if (spento && (now - v.timestamp > 8 * 3600 || !this.keepGhost)) continue;
+      seen.add(String(v.id));
       // se il GPS non dice la corsa, la prendo dalle previsioni ATAC (quando disponibili)
       if (!v.tripId && this.tripByVehicle && this.tripByVehicle.get(v.id)) v.tripId = this.tripByVehicle.get(v.id);
       const info = v.tripId ? tripInfo(v.tripId) : null;
@@ -56,7 +68,7 @@ export class GpsSource {
       if (v.bearing != null && v.bearing !== 0 && isFinite(v.bearing)) br = v.bearing;
       this.prev.set(v.id, { lng: v.lon, lat: v.lat, bearing: br });
 
-      list.push({
+      const item = {
         id: 'g' + v.id,
         vehicleNo: v.label || v.id,
         lng: v.lon, lat: v.lat,
@@ -71,9 +83,26 @@ export class GpsSource {
         occupancy: v.occupancy,
         ts: v.timestamp || feed.timestamp,
         source: 'gps',
-      });
+      };
+      if (spento) { item.spento = true; item.ghost = this.keepGhost(item); if (!item.ghost) continue; item.bearing = null; }
+      list.push(item);
+    }
+    // vetture che ATAC non manda più del tutto: le ricorda l'archivio (aggiornato ogni ~10 minuti)
+    if (this.keepGhost) {
+      await this.loadGhosts();
+      for (const [id, g] of Object.entries(this.ghosts || {})) {
+        if (seen.has(id) || now - g[4] > 8 * 3600) continue;
+        const info = g[5] ? tripInfo(g[5]) : null;
+        const route = info ? routeInfo(info.routeId) : null;
+        const item = { id: 'g' + id, vehicleNo: g[0], lng: g[2], lat: g[1], bearing: null, line: route ? route.n : (g[6] || '?'),
+          routeId: info ? info.routeId : '', type: route ? route.t : 3, headsign: info ? info.headsign : '', dir: info ? info.dir : undefined,
+          tripId: g[5], ts: g[4], source: 'gps', spento: true };
+        item.ghost = this.keepGhost(item);
+        if (item.ghost) list.push(item);
+      }
     }
     if (this.prev.size > 6000) this.prev.clear();
+    void now;
     return { vehicles: list, feedTime: feed.timestamp };
   }
 }

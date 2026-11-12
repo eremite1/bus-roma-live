@@ -9,7 +9,7 @@ import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, upda
 import { initLimitata, openLimitata } from './limitata.js';
 import { initStorico, openStorico } from './storico.js';
 import { initPreferiti, openPreferiti, openTurno, favBtn } from './preferiti.js';
-import { initRientri, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
+import { initRientri, ghostInfo, loadBlocks as loadBlocksR, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -26,7 +26,7 @@ const EMPTY = { type: 'FeatureCollection', features: [] };
 
 const state = {
   source: null,
-  gps: PROXY ? new GpsSource(PROXY) : null,
+  gps: PROXY ? Object.assign(new GpsSource(PROXY), { keepGhost: (v) => ghostInfo(v) }) : null,
   est: new EstimatedSource(),
   vehicles: [],
   shown: new Map(),       // id -> { from:[lng,lat], to:[lng,lat], v }
@@ -449,7 +449,7 @@ function vehicleByTrip(rawId) {
 
 function updateStatus() {
   const el = $('status');
-  const n = [...state.shown.values()].filter((s) => lineMatches(s.v)).length;
+  const n = [...state.shown.values()].filter((s) => !s.v.spento && lineMatches(s.v)).length;
   const src = state.source;
   el.classList.remove('live', 'est', 'err');
   let text;
@@ -568,7 +568,14 @@ function showVehicle(v) {
   const color = colorOf(v);
   const age = v.ts ? Math.max(0, Math.round(Date.now() / 1000 - v.ts)) : null;
   const facts = [];
-  if (v.source === 'gps') {
+  if (v.spento) {
+    const g = v.ghost || {};
+    const min = Math.round(age / 60), dur = min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
+    const hhmm = new Date(v.ts * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    facts.push(`<span class="late">⚫ Vettura <b>${esc(v.vehicleNo)}</b> spenta: non trasmette da <b>${dur}</b> (ultimo segnale ${hhmm})</span>`);
+    if (g.cur) facts.push(`Ultima corsa ${esc(g.cur[1])} ${esc(g.cur[4])} → ${esc(g.cur[5])}`);
+    if (g.next) facts.push(`Corsa successiva prevista ${esc(g.next[1])} da ${esc(g.next[4])}`);
+  } else if (v.source === 'gps') {
     facts.push(`Vettura <b>${esc(v.vehicleNo)}</b>`);
     if (age != null) facts.push(`<span class="rt">GPS ${age < 90 ? age + ' s' : Math.round(age / 60) + ' min'} fa</span>`);
     if (v.speed > 0.5) facts.push(`${Math.round(v.speed * 3.6)} km/h`);
@@ -1611,6 +1618,7 @@ $('navBtn').onclick = () => { hideSuggest(); openNavPicker(); };
 map.on('load', async () => {
   setupLayers();
   await loadRoutes();
+  if (state.gps) loadBlocksR().catch(() => {});
   startSource(state.gps || state.est);
   loadTrips().then(() => { if (state.source) refreshVehicles(); });
   refreshStops();

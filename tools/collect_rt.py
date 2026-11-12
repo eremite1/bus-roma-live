@@ -54,6 +54,7 @@ def main():
 
     vp = feed("vehicles")
     if vp:
+        traccia_spenti(out_dir, vp, line_of, now)
         count = {}
         for e in vp.entity:
             if not e.HasField("vehicle"):
@@ -108,6 +109,39 @@ def main():
             s["tabelle"] = len(s["tabelle"])
         json.dump(summary, open(tab_path, "w"), ensure_ascii=False, separators=(",", ":"))
         print("Riepilogo tabelle salvato")
+
+
+def traccia_spenti(out_dir, vp, line_of, now):
+    """Ricorda l'ultima posizione di ogni vettura. Quelle che non trasmettono da oltre 10 minuti
+    (fino a 8 ore) finiscono in spenti.json: la mappa le mostra in nero."""
+    path = os.path.join(out_dir, "ultimi.json")
+    ultimi = json.load(open(path)) if os.path.exists(path) else {}
+    nowts = int(now.timestamp())
+    stat = {"totale": 0, "senza_corsa": 0, "senza_corsa_in_moto": 0, "vecchi": 0}
+    for e in vp.entity:
+        if not e.HasField("vehicle"):
+            continue
+        v = e.vehicle
+        vid = v.vehicle.id or e.id
+        ts = int(v.timestamp or vp.header.timestamp or nowts)
+        stat["totale"] += 1
+        if not v.trip.trip_id:
+            stat["senza_corsa"] += 1
+            if v.position.speed and v.position.speed > 1:
+                stat["senza_corsa_in_moto"] += 1
+        if nowts - ts > 600:
+            stat["vecchi"] += 1
+        old = ultimi.get(vid)
+        if old and old[4] >= ts:
+            continue
+        trip = v.trip.trip_id or (old[5] if old else "")
+        ultimi[vid] = [v.vehicle.label or vid, round(v.position.latitude, 5), round(v.position.longitude, 5),
+                       round(v.position.bearing or 0), ts, trip, line_of(trip, v.trip.route_id) or (old[6] if old else "")]
+    ultimi = {k: x for k, x in ultimi.items() if nowts - x[4] < 8 * 3600}
+    json.dump(ultimi, open(path, "w"), separators=(",", ":"))
+    spenti = {k: x for k, x in ultimi.items() if nowts - x[4] > 600}
+    json.dump({"agg": nowts, "stat": stat, "spenti": spenti}, open(os.path.join(out_dir, "spenti.json"), "w"), separators=(",", ":"))
+    print("Spenti:", len(spenti), stat)
 
 
 if __name__ == "__main__":

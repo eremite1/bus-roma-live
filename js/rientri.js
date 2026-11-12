@@ -119,7 +119,7 @@ export function vehiclesByBlock() {
   const map = new Map();
   for (const s of C.state.shown.values()) {
     const v = s.v;
-    if (v.source !== 'gps') continue;
+    if (v.source !== 'gps' || v.spento) continue;
     const b = blockOf(v.tripId);
     if (b) map.set(b, v);
   }
@@ -336,4 +336,23 @@ export function ipotesi(b) {
   if (shortMorning(trips)) msg += ' (è un giro corto della mattina: potrebbe avere un numero a parte)';
   else if (n2 !== n1) msg += ` oppure ${L}/${n2} se i giri corti della mattina non si contano`;
   return msg + '. Confrontala col numero vero: se è diversa, dimmelo!';
+}
+
+// Vettura che non trasmette più: la mostro solo se la sua tabella aveva ancora corse dopo l'ultimo segnale
+// (turno scoperto / vettura lasciata in sosta). Se aveva finito o rientrava in deposito, no.
+export function ghostInfo(v) {
+  if (!blocks || !v.tripId || !String(v.tripId).includes('-')) return null;
+  const b = String(v.tripId).replace(/-[^-]*$/, '');
+  const trips = blocks[b];
+  if (!trips) return null;
+  const d = new Date(v.ts * 1000);
+  let M = d.getHours() * 60 + d.getMinutes();
+  if (M < 240) M += 1440;
+  const mm = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+  const cur = trips.find((t) => t[0] === v.tripId);
+  // corse che restavano da fare: dopo la corsa in corso (se nota) o dopo l'ora dell'ultimo segnale
+  const rest = cur ? trips.slice(trips.indexOf(cur) + 1) : trips.filter((t) => mm(t[1]) >= M - 2);
+  const next = rest.find((t) => !isColl(t[3]));
+  if (!next) return null; // tabella finita o stava rientrando in deposito
+  return { b, name: tabName(b), cur, next };
 }
