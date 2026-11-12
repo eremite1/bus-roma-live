@@ -57,6 +57,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!Accesso.autorizzato(this)) { mostraAccesso(); main.postDelayed({ Updater.check(this, quiet = true) }, 1500); return }
         val root = FrameLayout(this)
 
         web = WebView(this).apply {
@@ -112,6 +113,54 @@ class MainActivity : Activity() {
 
         // all'apertura: c'è una versione nuova? (dopo il benvenuto)
         main.postDelayed({ Updater.check(this, quiet = true) }, 3200)
+    }
+
+    /** Schermata di accesso: si vede solo la prima volta, finché non si mette il codice giusto. */
+    private fun mostraAccesso() {
+        val dp = resources.displayMetrics.density
+        val tel = Accesso.codiceTelefono(this)
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding((28 * dp).toInt(), (60 * dp).toInt(), (28 * dp).toInt(), (28 * dp).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#A51C45"), Color.parseColor("#6E0F2B")))
+        }
+        fun testo(t: String, size: Float, c: String, bold: Boolean = false, top: Int = 0) = TextView(this).apply {
+            text = t; textSize = size; setTextColor(Color.parseColor(c)); gravity = Gravity.CENTER
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, (top * dp).toInt(), 0, 0)
+        }
+        col.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams((96 * dp).toInt(), (96 * dp).toInt()))
+        col.addView(testo("Bus Roma Live", 26f, "#FFFFFF", true, 16))
+        col.addView(testo("Per usare l'app serve un codice di accesso, valido solo per questo telefono. Si inserisce una volta sola.", 15f, "#F3E3E8", top = 12))
+        col.addView(testo("Codice di questo telefono", 13f, "#E8C9D2", top = 22))
+        col.addView(testo(tel, 30f, "#F2B33D", true, 2).apply { setTextIsSelectable(true) })
+        col.addView(android.widget.Button(this).apply {
+            text = "Invia il codice del telefono"
+            setOnClickListener {
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Codice telefono Bus Roma Live: $tel")
+                }, "Invia il codice"))
+            }
+        })
+        val campo = android.widget.EditText(this).apply {
+            hint = "Codice di accesso (es. K8PD-2XQM)"
+            setHintTextColor(Color.parseColor("#C9A3AF")); setTextColor(Color.WHITE); textSize = 20f
+            gravity = Gravity.CENTER; isSingleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        col.addView(campo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (24 * dp).toInt() })
+        val esito = testo("", 14f, "#FFD7D7", top = 8)
+        col.addView(android.widget.Button(this).apply {
+            text = "Entra"
+            setOnClickListener {
+                if (Accesso.prova(this@MainActivity, campo.text.toString())) recreate()
+                else esito.text = "Codice non valido per questo telefono."
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (12 * dp).toInt() })
+        col.addView(esito)
+        col.addView(testo("Manda il codice del telefono a chi gestisce l'app: ti risponderà con il codice di accesso.", 13f, "#E8C9D2", top = 18))
+        setContentView(android.widget.ScrollView(this).apply { isFillViewport = true; addView(col) })
     }
 
     private fun benvenuto(): View {
@@ -180,6 +229,9 @@ class MainActivity : Activity() {
             }
         }
         @JavascriptInterface fun appVersion(): String = Updater.currentName(this@MainActivity)
+        @JavascriptInterface fun isAdmin(): Boolean = Accesso.isAdmin(this@MainActivity)
+        @JavascriptInterface fun genCode(tel: String): String = if (Accesso.isAdmin(this@MainActivity)) Accesso.codicePer(tel) else ""
+        @JavascriptInterface fun phoneCode(): String = Accesso.codiceTelefono(this@MainActivity)
         @JavascriptInterface fun checkUpdate() { runOnUiThread { Updater.check(this@MainActivity, quiet = false) } }
     }
 
@@ -203,6 +255,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Gestione del tasto indietro")
     override fun onBackPressed() {
+        if (!::web.isInitialized) { @Suppress("DEPRECATION") super.onBackPressed(); return }
         // prima prova a chiudere il pannello aperto nella mappa, poi torna indietro, poi esce
         web.evaluateJavascript("(function(){var b=document.getElementById('sheetClose');var s=document.getElementById('sheet');if(s&&!s.hidden&&b){b.click();return 'chiuso';}return '';})()") { r ->
             if (r?.contains("chiuso") != true) {
@@ -211,7 +264,15 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); web.saveState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); if (::web.isInitialized) web.saveState(outState) }
 
-    override fun onDestroy() { tts?.shutdown(); web.destroy(); super.onDestroy() }
+    private var primoResume = true
+    override fun onResume() {
+        super.onResume()
+        // aggiornamento obbligatorio: se l'utente è uscito dall'installazione, il messaggio ricompare
+        if (!primoResume) Updater.check(this, quiet = true)
+        primoResume = false
+    }
+
+    override fun onDestroy() { tts?.shutdown(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
 }

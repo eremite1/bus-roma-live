@@ -53,6 +53,10 @@
         <svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6v10H3z"/><path d="M8 20v-6h8v6"/></svg>
         <span>Rientri</span>
       </button>
+      <button class="chip" id="navChip">
+        <svg viewBox="0 0 24 24"><path d="M12 2l8 19-8-4.5L4 21z"/></svg>
+        <span>Navigatore</span>
+      </button>
       <button class="chip" id="turnoChip">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         <span>Turno</span>
@@ -78,6 +82,10 @@
     </button>
     <button class="fab fab-dev" id="devBtn" aria-label="Deviazione da foto" title="Deviazione">
       <svg viewBox="0 0 24 24"><path d="M12 2l10 10-10 10L2 12z"/><path d="M9 14v-2.5a1.5 1.5 0 0 1 1.5-1.5H15M13 8l2 2-2 2"/></svg>
+    </button>
+    <button class="fab" id="northBtn" aria-label="Nord in alto" title="Bussola: tocca per il nord in alto, tieni premuto per bloccarlo">
+      <svg viewBox="0 0 24 24" id="northIco"><path d="M12 3l4 9h-8z" fill="#C8102E" stroke="#C8102E"/><path d="M12 21l-4-9h8z"/></svg>
+      <span class="north-lock" id="northLock" hidden>🔒</span>
     </button>
     <button class="fab" id="locateBtn" aria-label="La mia posizione" title="La mia posizione">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>

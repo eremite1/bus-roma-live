@@ -54,58 +54,49 @@ export async function openPreferiti() {
   timer = setInterval(() => { if (C.state.view?.type === 'preferiti') renderPref(); else clearInterval(timer); }, 30_000);
 }
 
+// Nei preferiti solo tabelle e turni: per ognuno mostro tutto (vettura, dove si trova, corsa in corso).
+const prefOk = (f) => f.type === 'tabella' || f.type === 'turno';
+function resolveFav(f) {
+  if (f.type === 'tabella') return findBlock(f);
+  const tmm = TAB_RE.exec(f.line || '');
+  if (tmm) { const w = `${tmm[1]}/${+tmm[2]}`.toLowerCase(); return Object.keys(blocksNow()).find((k) => tabName(k).toLowerCase() === w) || ''; }
+  const best = f.on ? findTurno(f.line, f.on, f.off)[0] : null;
+  return best ? best.b : '';
+}
 function renderPref() {
   const el = document.getElementById('pfView');
   if (!el) return;
-  const favs = list();
-  const vs = liveVehicles();
+  const all = list(), favs = all.filter(prefOk);
   const vb = vehiclesByBlock();
-  const rows = favs.map((f, i) => {
-    let icon = '', title = '', sub = '';
-    if (f.type === 'linea') {
-      const n = vs.filter((v) => String(v.line).toLowerCase() === f.line.toLowerCase()).length;
-      icon = '🚌'; title = `Linea ${esc(f.line)}`; sub = n ? `${n} ${n === 1 ? 'mezzo' : 'mezzi'} in viaggio ora` : 'nessun mezzo in viaggio ora';
-    } else if (f.type === 'vettura') {
-      const v = vs.find((x) => x.source === 'gps' && sameNo(x.vehicleNo, f.no));
-      icon = '🔢'; title = `Vettura ${esc(f.no)}`;
-      sub = v ? `in servizio sulla <b>${esc(v.line)}</b>${v.headsign ? ' verso ' + esc(v.headsign) : ''}` : 'non in servizio ora (o GPS spento)';
-    } else if (f.type === 'tabella') {
-      const b = findBlock(f), v = b && vb.get(b);
-      icon = '📋'; title = esc(b ? tabName(b) : f.label || 'Tabella');
-      sub = !b ? 'non presente negli orari di oggi' : v ? `vettura <b>${esc(v.vehicleNo)}</b> · ${esc(v.line)}${v.headsign ? ' verso ' + esc(v.headsign) : ''}` : 'vettura non ancora in servizio';
-    } else {
-      const tmm = TAB_RE.exec(f.line || '');
-      const best = tmm ? (() => { const w = `${tmm[1]}/${+tmm[2]}`.toLowerCase(); const b = Object.keys(blocksNow()).find((k) => tabName(k).toLowerCase() === w); return b ? { b } : null; })() : findTurno(f.line, f.on, f.off)[0];
-      const v = best && vb.get(best.b);
-      icon = '🕑'; title = `Turno ${f.line ? esc(f.line) + ' ' : ''}${esc(f.on || '')}${f.off ? ' – ' + esc(f.off) : ''}`;
-      sub = !best ? 'nessuna tabella trovata oggi' : `${esc(tabName(best.b))} · ${v ? `vettura <b>${esc(v.vehicleNo)}</b>` : 'vettura non ancora in servizio'}`;
+  const bl = blocksNow();
+  const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowT = (t) => { const s = mins(t[1]), e = mins(t[2]); return (s <= nowM && e >= nowM) || (s <= nowM + 1440 && e >= nowM + 1440); };
+  const cards = favs.map((f) => {
+    const i = all.indexOf(f);
+    const b = resolveFav(f), trips = b && bl[b], v = b && vb.get(b);
+    const title = f.type === 'turno'
+      ? `🕑 Turno ${esc(f.line || '')} ${esc(f.on || '')}${f.off ? '–' + esc(f.off) : ''}`
+      : `📋 ${esc(b ? tabName(b) : f.label || 'Tabella')}`;
+    let body;
+    if (!trips) body = '<div class="muted">Oggi questa tabella non gira (o non la trovo negli orari di oggi).</div>';
+    else {
+      const cur = trips.find(nowT), next = trips.find((t) => mins(t[1]) > nowM);
+      const lines = [...new Set(trips.map((t) => t[3]).filter((l) => !isColl(l)))].join(' › ');
+      body = `<div><b>${esc(tabName(b))}</b> · ${esc(lines)} · uscita ${esc(h24(trips[0][1]))}, rientro ${esc(h24(trips[trips.length - 1][2]))}</div>
+        <div class="tu-vline">${v ? `<b class="tu-veh">Vettura ${esc(v.vehicleNo)}</b>${v.headsign ? ' · verso ' + esc(v.headsign) : ''}` : (mins(trips[0][1]) > nowM ? `Vettura non ancora uscita (esce alle ${esc(h24(trips[0][1]))})` : 'Vettura non visibile ora (GPS spento o fuori servizio)')}</div>
+        ${cur ? `<div>Ora: ${esc(isColl(cur[3]) ? 'collegamento ' + cur[3] : 'corsa ' + h24(cur[1]))} ${esc(cur[4])} → ${esc(cur[5])} (arrivo ${esc(h24(cur[2]))})</div>` : next ? `<div>Prossima: ${esc(h24(next[1]))} da ${esc(next[4])}</div>` : '<div class="muted">Servizio di oggi finito.</div>'}
+        <div class="actions">${v ? `<button class="btn" data-veh="${esc(b)}">Dov'è adesso</button>` : ''}<button class="btn ghost" data-tab="${esc(b)}">Apri tabella</button></div>`;
     }
-    return `<li class="pf-row"><button class="pf-open" data-i="${i}"><span class="pf-ico">${icon}</span><span><b>${title}</b><small>${sub}</small></span></button>
-      <button class="pf-del" data-del="${i}" aria-label="Togli dai preferiti">✕</button></li>`;
+    return `<div class="tu-card"><div class="tu-head"><b>${title}</b><button class="pf-del" data-del="${i}" aria-label="Togli dai preferiti">✕</button></div>${body}</div>`;
   }).join('');
   el.innerHTML = `<h2>★ Preferiti</h2>
-    ${rows ? `<ul class="pf-list">${rows}</ul>` : `<p class="sub">Nessun preferito. Usa <b>☆ Aggiungi ai preferiti</b> nella scheda di una linea, di una vettura o di una tabella, oppure salva il tuo turno.</p>`}
-    <form class="pf-add" id="pfVeh"><input id="pfVehNo" inputmode="numeric" placeholder="Numero vettura (es. 4512)" aria-label="Numero vettura"><button class="btn ghost" type="submit">+ Vettura</button></form>
+    ${cards || `<p class="sub">Nessun preferito. Apri una tabella (o cerca il tuo turno) e tocca <b>☆ Aggiungi ai preferiti</b>: qui vedrai vettura, posizione e corsa in corso.</p>`}
     <div class="actions"><button class="btn" id="pfTurno">🕑 Trova il mio turno</button></div>
-    <p class="muted">I preferiti restano salvati su questo telefono. Aggiornamento ogni 30 secondi.</p>`;
-  document.getElementById('pfVeh').onsubmit = (e) => {
-    e.preventDefault();
-    const no = document.getElementById('pfVehNo').value.trim();
-    if (!no) return;
-    if (!isFav({ type: 'vettura', no })) toggle({ type: 'vettura', no });
-    renderPref();
-  };
+    <p class="muted">Salvati su questo telefono. Aggiornamento ogni 30 secondi.</p>`;
   document.getElementById('pfTurno').onclick = () => openTurno();
-  el.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { const l = list(); l.splice(+b.dataset.del, 1); ls('preferiti', l); renderPref(); });
-  el.querySelectorAll('.pf-open').forEach((b) => b.onclick = () => {
-    const f = favs[+b.dataset.i];
-    if (f.type === 'linea') C.showLine(f.line);
-    else if (f.type === 'vettura') {
-      const v = liveVehicles().find((x) => x.source === 'gps' && sameNo(x.vehicleNo, f.no));
-      if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } else C.toast('La vettura ' + f.no + ' ora non è in servizio');
-    } else if (f.type === 'tabella') { const blk = findBlock(f); if (blk) openTabella(blk); else C.toast('Tabella non presente negli orari di oggi'); }
-    else openTurno(f);
-  });
+  el.querySelectorAll('[data-del]').forEach((x) => x.onclick = () => { const l = list(); l.splice(+x.dataset.del, 1); ls('preferiti', l); renderPref(); });
+  el.querySelectorAll('[data-veh]').forEach((x) => x.onclick = () => { const v = vb.get(x.dataset.veh); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } });
+  el.querySelectorAll('[data-tab]').forEach((x) => x.onclick = () => openTabella(x.dataset.tab));
 }
 
 // ---------------- il mio turno ----------------

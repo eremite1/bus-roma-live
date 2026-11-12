@@ -62,13 +62,19 @@ object Updater {
         } finally { c.disconnect() }
     }
 
+    @Volatile private var occupato = false
+
+    /** Aggiornamento OBBLIGATORIO: il messaggio non si può chiudere, si può solo aggiornare. */
     private fun ask(act: Activity, info: Info) {
+        if (occupato) return
+        occupato = true
         AlertDialog.Builder(act)
-            .setTitle("Aggiornamento disponibile")
-            .setMessage("È disponibile ${info.name} (tu hai la ${currentName(act)}).\n\n" +
+            .setTitle("Aggiornamento obbligatorio")
+            .setMessage("È disponibile ${info.name} (tu hai la ${currentName(act)}). Per continuare a usare l'app devi aggiornarla.\n\n" +
                 (if (info.notes.isNotBlank()) "Novità:\n${info.notes}" else ""))
+            .setCancelable(false)
             .setPositiveButton("Aggiorna ora") { _, _ -> download(act, info) }
-            .setNegativeButton("Più tardi", null)
+            .setOnDismissListener { occupato = false }
             .show()
     }
 

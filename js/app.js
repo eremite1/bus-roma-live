@@ -97,11 +97,20 @@ const map = new maplibregl.Map({
   zoom: C.ZOOM,
   minZoom: 8,
   maxZoom: 19,
-  dragRotate: false,
+  dragRotate: true,
   pitchWithRotate: false,
   attributionControl: false,
 });
-map.touchZoomRotate.disableRotation();
+// rotazione con due dita; "nord fisso" la blocca col nord in alto (scelta ricordata)
+let northLocked = false;
+try { northLocked = localStorage.getItem('nordFisso') === '1'; } catch (e) {}
+function applyNorth() {
+  if (northLocked) { map.touchZoomRotate.disableRotation(); map.dragRotate.disable(); map.easeTo({ bearing: 0, duration: 300 }); }
+  else { map.touchZoomRotate.enableRotation(); map.dragRotate.enable(); }
+  const l = document.getElementById('northLock'); if (l) l.hidden = !northLocked;
+}
+applyNorth();
+map.on('rotate', () => { const i = document.getElementById('northIco'); if (i) i.style.transform = `rotate(${-map.getBearing()}deg)`; });
 window.__busMap = map; // utile per le prove automatiche
 map.addControl(new maplibregl.AttributionControl({
   compact: true,
@@ -576,7 +585,6 @@ function showVehicle(v) {
     <div class="facts" id="vehTab"></div>
     <div class="actions">
       <button class="btn ghost" id="showLineBtn">${ICON.bus} Tutta la linea ${esc(v.line)}</button>
-      ${v.source === 'gps' && v.vehicleNo ? favBtn({ type: 'vettura', no: String(v.vehicleNo) }) : ''}
     </div>
     <div class="section-title">Fermate della corsa</div>
     <div id="tripStops"><div class="spinner">Carico gli orari…</div></div>
@@ -957,7 +965,7 @@ function renderLineView() {
     ${summary}
     ${rows ? `<ul class="rows">${rows}</ul>` : `<p class="sub">Nessun mezzo in viaggio in questa direzione.</p>`}
     ${unknown ? `<p class="muted">${unknown} ${unknown === 1 ? 'mezzo' : 'mezzi'} senza direzione nota (non mostrati).</p>` : ''}
-    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button><button class="btn ghost" id="stLineBtn">Storico</button>${favBtn({ type: 'linea', line: String(name) })}</div>
+    <div class="actions"><button class="btn" id="navLineBtn">Naviga questa linea</button><button class="btn ghost" id="limLineBtn">Limitata</button><button class="btn ghost" id="stLineBtn">Storico</button></div>
     ${vehicles.length ? `<p class="muted" style="margin-top:10px"><b style="color:${STATUS.ok.color}">verde</b> in orario,
       <b style="color:${STATUS.late.color}">arancio</b> ritardo 2-4 min, <b style="color:${STATUS.vlate.color}">rosso</b> 5 min o più,
       <b style="color:${STATUS.early.color}">blu</b> in anticipo. Aggiornamento ogni 30 secondi.</p>` : ''}`;
@@ -1415,10 +1423,21 @@ $('infoBtn').onclick = () => {
     <p><b>Mappa:</b> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
     ${window.Android && Android.appVersion ? `<div class="section-title">App</div><p>Versione <b>${esc(Android.appVersion())}</b></p>
       <div class="actions" style="margin-top:0"><button class="btn" id="appUpd">Controlla aggiornamenti</button></div>` : ''}
+    ${window.Android && Android.isAdmin && Android.isAdmin() ? `<div class="section-title">Codici di accesso (amministratore)</div>
+      <p class="muted">Scrivi il codice del telefono che ti hanno mandato: ottieni il codice di accesso valido solo per quel telefono.</p>
+      <form class="pf-add" id="genForm"><input id="genTel" placeholder="Codice telefono (es. 7F3A-91C2)" autocomplete="off"><button class="btn" type="submit">Genera</button></form>
+      <p id="genOut" class="tu-veh"></p>` : ''}
     <p class="muted">Progetto personale non commerciale, senza legami con ATAC o Roma Mobilità.</p>
   </div>`, { type: 'info' });
   const u = document.getElementById('appUpd');
   if (u) u.onclick = () => Android.checkUpdate();
+  const g = document.getElementById('genForm');
+  if (g) g.onsubmit = (e) => {
+    e.preventDefault();
+    const tel = document.getElementById('genTel').value.trim();
+    const code = tel ? Android.genCode(tel) : '';
+    document.getElementById('genOut').textContent = code ? `Codice di accesso per ${tel.toUpperCase()}: ${code}` : '';
+  };
 };
 
 // ---------------- clic e pressione lunga sulla mappa ----------------
@@ -1540,6 +1559,24 @@ initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet
 initRientri({ favBtn, state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
   delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
 initPreferiti({ state, openSheet, toast, showVehicle: (v) => showVehicle(v), showPoint, showLine: (n) => showLine(n), refreshAtac: () => PROXY && fetchAtacDelays() });
+$('navChip').onclick = () => { hideSuggest(); openNavPicker(); };
+{
+  const nb = $('northBtn');
+  let pressT = null, longDone = false;
+  const toggleLock = () => {
+    northLocked = !northLocked;
+    try { localStorage.setItem('nordFisso', northLocked ? '1' : '0'); } catch (e) {}
+    applyNorth();
+    toast(northLocked ? 'Nord fisso: la mappa non ruota' : 'Rotazione libera con due dita');
+  };
+  nb.addEventListener('pointerdown', () => { longDone = false; pressT = setTimeout(() => { longDone = true; toggleLock(); }, 600); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => nb.addEventListener(ev, () => clearTimeout(pressT)));
+  nb.addEventListener('click', () => {
+    if (longDone) return;
+    if (northLocked || Math.abs(map.getBearing()) < 1) toggleLock();
+    else map.easeTo({ bearing: 0, duration: 400 });
+  });
+}
 $('turnoChip').onclick = () => { hideSuggest(); openTurno(); };
 $('prefChip').onclick = () => { hideSuggest(); openPreferiti(); };
 $('rientriChip').onclick = () => { hideSuggest(); openRientri(); };
