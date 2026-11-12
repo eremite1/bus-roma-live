@@ -72,13 +72,19 @@ export function runsOf(trips) {
 export const rientriOf = runsOf;
 
 // Nome della tabella (es. "913/4"): da data/tabelle.json o assegnato a mano; chiave = linea@orario prima corsa
+// chiave del nome: linea@orario della prima corsa di servizio, più il capolinea di partenza
+// (due tabelle della stessa linea possono partire alla stessa ora da capolinea diversi)
 export function nameKey(trips) {
   const r = runsOf(trips)[0];
-  return r ? `${r.firstLine}@${r.start}` : '';
+  if (!r) return '';
+  const f = trips.find((t) => !isColl(t[3]));
+  return `${r.firstLine}@${r.start}` + (f ? '>' + f[4] : '');
 }
+const plainKey = (k) => k.split('>')[0];
 export function tabName(b) {
   const trips = blocks && blocks[b];
-  const n = trips && names[nameKey(trips)];
+  const k = trips && nameKey(trips);
+  const n = k && (names[k] || names[plainKey(k)]);
   return n || `Tab. ${b.replace(/^0#/, '')}`;
 }
 export function setTabName(b, value) {
@@ -265,7 +271,7 @@ export async function openTabella(b, highlightTrip) {
   `, { type: 'tabella', b }, { tall: true });
   document.getElementById('tbIpo').onclick = () => C.toast(ipotesi(b), 9000);
   document.getElementById('tbName').onclick = () => {
-    const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', names[nameKey(trips)] || '');
+    const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', (names[nameKey(trips)] || names[plainKey(nameKey(trips))] || ''));
     if (val !== null) { setTabName(b, val.trim()); openTabella(b, highlightTrip); }
   };
   const vb = document.getElementById('tbVeh');
@@ -300,7 +306,7 @@ document.addEventListener('click', (e) => {
   const btn = e.target.closest && e.target.closest('[data-tabname]');
   if (!btn) return;
   const b = btn.dataset.tabname;
-  const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', names[nameKey(blocks[b])] || '');
+  const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', (names[nameKey(blocks[b])] || names[plainKey(nameKey(blocks[b]))] || ''));
   if (val === null) return;
   setTabName(b, val.trim());
   btn.previousElementSibling.textContent = tabName(b);
