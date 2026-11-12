@@ -261,8 +261,9 @@ export async function openTabella(b, highlightTrip) {
       <div class="tb-cols">${cells.join('')}</div>
     </div>
     <p class="muted">Orari ufficiali ATAC di oggi. In grigio i collegamenti col deposito; evidenziata la corsa in corso.</p>
-    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button>${C.favBtn ? C.favBtn({ type: 'tabella', b, key: nameKey(trips), label: name }) : ''}${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
+    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button><button class="btn ghost" id="tbIpo">≈ Ipotesi numero</button>${C.favBtn ? C.favBtn({ type: 'tabella', b, key: nameKey(trips), label: name }) : ''}${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
   `, { type: 'tabella', b }, { tall: true });
+  document.getElementById('tbIpo').onclick = () => C.toast(ipotesi(b), 9000);
   document.getElementById('tbName').onclick = () => {
     const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', names[nameKey(trips)] || '');
     if (val !== null) { setTabName(b, val.trim()); openTabella(b, highlightTrip); }
@@ -304,3 +305,29 @@ document.addEventListener('click', (e) => {
   setTabName(b, val.trim());
   btn.previousElementSibling.textContent = tabName(b);
 });
+
+// IPOTESI del numero di tabella (regola non ancora sicura, da confrontare col numero vero):
+// le tabelle di una linea, in ordine di codice ATAC tra quelle che girano oggi, numerate 1, 2, 3…
+// Variante: senza i giri corti che fanno solo la mattina (rimessa-rimessa).
+function mainLine(trips) {
+  const c = {};
+  let last = '';
+  for (const t of trips) if (!isColl(t[3])) { c[t[3]] = (c[t[3]] || 0) + 1; last = t[3]; }
+  // a parità vince la linea su cui il giro finisce
+  return Object.keys(c).sort((a, b) => c[b] - c[a] || (b === last) - (a === last))[0] || '';
+}
+const codeNum = (b) => parseInt(String(b).split('#').pop(), 10) || 0;
+const shortMorning = (trips) => { const e = trips[trips.length - 1][2]; return parseInt(e, 10) < 14 && parseInt(trips[0][1], 10) < 10; };
+export function ipotesi(b) {
+  const all = blocks || {}, trips = all[b];
+  if (!trips) return 'Tabella non trovata';
+  const L = mainLine(trips);
+  const same = Object.keys(all).filter((k) => mainLine(all[k]) === L).sort((x, y) => codeNum(x) - codeNum(y));
+  const n1 = same.indexOf(b) + 1;
+  const noShort = same.filter((k) => k === b || !shortMorning(all[k]));
+  const n2 = noShort.indexOf(b) + 1;
+  let msg = `Ipotesi: ${L}/${n1}`;
+  if (shortMorning(trips)) msg += ' (è un giro corto della mattina: potrebbe avere un numero a parte)';
+  else if (n2 !== n1) msg += ` oppure ${L}/${n2} se i giri corti della mattina non si contano`;
+  return msg + '. Confrontala col numero vero: se è diversa, dimmelo!';
+}

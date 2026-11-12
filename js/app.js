@@ -543,12 +543,12 @@ function setPeek(on) { sheet.classList.toggle('peek', on); }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideSuggest(); if (!sheet.hidden) closeSheet(); } });
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, ms = 3800) {
   const t = $('toast');
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 3800);
+  toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
 
 // ---------------- scheda del mezzo ----------------
