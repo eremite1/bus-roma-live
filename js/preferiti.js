@@ -74,9 +74,10 @@ function renderPref() {
       icon = '📋'; title = esc(b ? tabName(b) : f.label || 'Tabella');
       sub = !b ? 'non presente negli orari di oggi' : v ? `vettura <b>${esc(v.vehicleNo)}</b> · ${esc(v.line)}${v.headsign ? ' verso ' + esc(v.headsign) : ''}` : 'vettura non ancora in servizio';
     } else {
-      const best = findTurno(f.line, f.on, f.off)[0];
+      const tmm = TAB_RE.exec(f.line || '');
+      const best = tmm ? (() => { const w = `${tmm[1]}/${+tmm[2]}`.toLowerCase(); const b = Object.keys(blocksNow()).find((k) => tabName(k).toLowerCase() === w); return b ? { b } : null; })() : findTurno(f.line, f.on, f.off)[0];
       const v = best && vb.get(best.b);
-      icon = '🕑'; title = `Turno ${f.line ? esc(f.line) + ' ' : ''}${esc(f.on)} – ${esc(f.off)}`;
+      icon = '🕑'; title = `Turno ${f.line ? esc(f.line) + ' ' : ''}${esc(f.on || '')}${f.off ? ' – ' + esc(f.off) : ''}`;
       sub = !best ? 'nessuna tabella trovata oggi' : `${esc(tabName(best.b))} · ${v ? `vettura <b>${esc(v.vehicleNo)}</b>` : 'vettura non ancora in servizio'}`;
     }
     return `<li class="pf-row"><button class="pf-open" data-i="${i}"><span class="pf-ico">${icon}</span><span><b>${title}</b><small>${sub}</small></span></button>
@@ -112,8 +113,9 @@ function renderPref() {
 // all'arrivo di una corsa (minuti di differenza). Vince il punteggio più basso.
 export function findTurno(line, on, off) {
   const M = mins(on);
-  let S = mins(off);
-  if (S <= M) S += 1440; // smontata dopo mezzanotte
+  const hasOff = !!off;
+  let S = hasOff ? mins(off) : M;
+  if (hasOff && S <= M) S += 1440; // smontata dopo mezzanotte
   const L = String(line || '').trim().toLowerCase();
   const out = [];
   for (const [b, trips] of Object.entries(blocksNow())) {
@@ -121,19 +123,20 @@ export function findTurno(line, on, off) {
     const svc = trips.filter((t) => !isColl(t[3]));
     if (L && !svc.some((t) => String(t[3]).toLowerCase() === L)) continue;
     const first = mins(trips[0][1]), last = mins(trips[trips.length - 1][2]);
-    if (first > M + 15 || last < S - 15) continue; // la tabella deve essere in giro sia alla montata sia alla smontata
+    if (first > M + 15 || last < (hasOff ? S - 15 : M)) continue; // la tabella deve essere in giro sia alla montata sia alla smontata
     const cand = L ? trips.filter((t) => isColl(t[3]) || String(t[3]).toLowerCase() === L) : trips;
     let dm = 1e9, tm = null, ds = 1e9, tsm = null;
     for (const t of cand) {
       const d = Math.abs(mins(t[1]) - M);
       if (d < dm) { dm = d; tm = t; }
     }
-    for (const t of trips) {
+    if (hasOff) for (const t of trips) {
       const d = Math.abs(mins(t[2]) - S);
       if (d < ds) { ds = d; tsm = t; }
     }
     // montata a metà corsa (cambio in linea): conta la corsa in corso
     const inCorso = trips.find((t) => mins(t[1]) <= M && mins(t[2]) > M);
+    if (!hasOff) ds = 0;
     out.push({ b, score: dm + ds, dm, ds, tm, ts: tsm, inCorso, trips });
   }
   return out.sort((a, b) => a.score - b.score).filter((r, i) => i < 3 && r.score <= 60);
@@ -143,11 +146,11 @@ let turnoTimer = null;
 export async function openTurno(saved) {
   const last = saved || ls('turnoUltimo') || {};
   C.openSheet(`<h2>🕑 Il mio turno</h2>
-    <p class="sub">Scrivi l'orario di montata e di smontata: trovo la tabella e la vettura che la sta facendo.</p>
+    <p class="sub">Scrivi la linea e l'orario di montata (la smontata aiuta ma non serve), oppure direttamente la tabella, es. <b>80-1</b>: trovo la vettura che la sta facendo.</p>
     <form id="tuForm" class="tu-form">
-      <label>Linea <input id="tuLine" value="${esc(last.line || '')}" placeholder="es. 913" autocomplete="off"></label>
-      <label>Montata <input id="tuOn" type="time" value="${esc(last.on || '')}" required></label>
-      <label>Smontata <input id="tuOff" type="time" value="${esc(last.off || '')}" required></label>
+      <label>Linea <input id="tuLine" value="${esc(last.line || '')}" placeholder="es. 913 oppure 80-1" autocomplete="off"></label>
+      <label>Montata <input id="tuOn" type="time" value="${esc(last.on || '')}"></label>
+      <label>Smontata <input id="tuOff" type="time" value="${esc(last.off || '')}"></label>
       <button class="btn" type="submit">Cerca</button>
     </form>
     <div id="tuRes"></div>`, { type: 'turno' }, { tall: true });
@@ -155,24 +158,54 @@ export async function openTurno(saved) {
   C.refreshAtac && C.refreshAtac();
   const run = () => {
     const q = { type: 'turno', line: document.getElementById('tuLine').value.trim(), on: document.getElementById('tuOn').value, off: document.getElementById('tuOff').value };
-    if (!q.on || !q.off) return;
+    if (!q.on && !TAB_RE.test(q.line)) { C.toast("Scrivi almeno l'orario di montata, oppure la tabella (es. 80-1)"); return; }
     ls('turnoUltimo', q);
     renderTurno(q);
   };
   document.getElementById('tuForm').onsubmit = (e) => { e.preventDefault(); run(); };
-  if (last.on && last.off) run();
+  if (last.on || TAB_RE.test(last.line || '')) run();
   clearInterval(turnoTimer);
   turnoTimer = setInterval(() => { if (C.state.view?.type === 'turno' && document.getElementById('tuRes')?.dataset.q) renderTurno(JSON.parse(document.getElementById('tuRes').dataset.q)); else if (C.state.view?.type !== 'turno') clearInterval(turnoTimer); }, 30_000);
+}
+
+const TAB_RE = /^\s*([A-Za-z]?\d+[A-Za-z]?)\s*[-\/]\s*(\d+)\s*$/;
+
+// ricerca per numero di tabella: solo per le tabelle col numero CONFERMATO
+function renderTabella(el, q, m) {
+  const want = `${m[1]}/${+m[2]}`.toLowerCase();
+  const bl = blocksNow();
+  const found = Object.keys(bl).filter((b) => tabName(b).toLowerCase() === want);
+  const vb = vehiclesByBlock();
+  if (!found.length) {
+    el.innerHTML = `<p class="sub">La tabella <b>${esc(want)}</b> non ha ancora un numero confermato (oppure oggi non gira). Per ora cerca con linea e orario di montata.</p>`;
+    return;
+  }
+  const M = q.on ? mins(q.on) : null;
+  el.innerHTML = found.map((b) => {
+    const trips = bl[b], v = vb.get(b);
+    const at = M == null ? null : (trips.find((t) => mins(t[1]) <= M && mins(t[2]) > M) || trips.find((t) => mins(t[1]) >= M));
+    return `<div class="tu-card best">
+      <div class="tu-head"><b>${esc(tabName(b))}</b><span>${esc([...new Set(trips.map((t) => t[3]).filter((l) => !isColl(l)))].join(' › '))}</span></div>
+      <div>Uscita ${esc(h24(trips[0][1]))} · rientro ${esc(h24(trips[trips.length - 1][2]))}</div>
+      ${at ? `<div>Alle ${esc(q.on)}: corsa ${esc(h24(at[1]))} ${esc(at[4])} → ${esc(at[5])}</div>` : ''}
+      <div class="tu-vline">${v ? `<b class="tu-veh">Vettura ${esc(v.vehicleNo)}</b> · ora sulla ${esc(v.line)}${v.headsign ? ' verso ' + esc(v.headsign) : ''}` : 'Vettura non visibile ora (non ancora uscita o GPS spento)'}</div>
+      <div class="actions">${v ? `<button class="btn" data-tuveh="${esc(b)}">Dov'è adesso</button>` : ''}<button class="btn ghost" data-tutab="${esc(b)}">Apri tabella</button>${favBtn({ type: 'tabella', b, key: nameKey(trips), label: tabName(b) })}</div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('[data-tuveh]').forEach((x) => x.onclick = () => { const v = vb.get(x.dataset.tuveh); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } });
+  el.querySelectorAll('[data-tutab]').forEach((x) => x.onclick = () => openTabella(x.dataset.tutab));
 }
 
 function renderTurno(q) {
   const el = document.getElementById('tuRes');
   if (!el) return;
   el.dataset.q = JSON.stringify(q);
+  const tm0 = TAB_RE.exec(q.line || '');
+  if (tm0) return renderTabella(el, q, tm0);
   const res = findTurno(q.line, q.on, q.off);
   const vb = vehiclesByBlock();
   if (!res.length) {
-    el.innerHTML = `<p class="sub">Nessuna tabella di oggi${q.line ? ' sulla ' + esc(q.line) : ''} corrisponde a montata ${esc(q.on)} e smontata ${esc(q.off)}. Controlla linea e orari${q.line ? ', oppure prova senza linea' : ''}.</p>`;
+    el.innerHTML = `<p class="sub">Nessuna tabella di oggi${q.line ? ' sulla ' + esc(q.line) : ''} corrisponde a montata ${esc(q.on)}${q.off ? ' e smontata ' + esc(q.off) : ''}. Controlla linea e orari${q.line ? ', oppure prova senza linea' : ''}.</p>`;
     return;
   }
   const now = new Date().getHours() * 60 + new Date().getMinutes();
@@ -184,8 +217,8 @@ function renderTurno(q) {
         ? `parte alle <b>${esc(h24(tm[1]))}</b> da ${esc(tm[4])} → ${esc(tm[5])}`
         : r.inCorso ? `cambio in linea: alle ${esc(q.on)} è sulla corsa ${esc(h24(r.inCorso[1]))} ${esc(r.inCorso[4])} → ${esc(r.inCorso[5])}`
           : `corsa più vicina: ${esc(h24(tm[1]))} da ${esc(tm[4])}`;
-      const coll = isColl(r.ts[3]);
-      const smont = coll ? `rientra in deposito (${esc(r.ts[3])}) alle <b>${esc(h24(r.ts[2]))}</b> a ${esc(r.ts[5])}`
+      const coll = r.ts && isColl(r.ts[3]);
+      const smont = !r.ts ? '' : coll ? `rientra in deposito (${esc(r.ts[3])}) alle <b>${esc(h24(r.ts[2]))}</b> a ${esc(r.ts[5])}`
         : `arriva alle <b>${esc(h24(r.ts[2]))}</b> a ${esc(r.ts[5])}`;
       const outT = r.trips[0][1];
       const vehLine = v
@@ -195,7 +228,7 @@ function renderTurno(q) {
       return `<div class="tu-card${i === 0 ? ' best' : ''}">
         <div class="tu-head"><b>${esc(tabName(r.b))}</b><span>${esc([...new Set(r.trips.map((t) => t[3]).filter((l) => !isColl(l)))].join(' › '))}</span></div>
         <div>Montata ${esc(q.on)}: ${mont}</div>
-        <div>Smontata ${esc(q.off)}: ${smont}</div>
+        ${q.off ? `<div>Smontata ${esc(q.off)}: ${smont}</div>` : `<div>Fine tabella: ${esc(h24(r.trips[r.trips.length - 1][2]))}${isColl(r.trips[r.trips.length - 1][3]) ? ' (rientro in deposito)' : ''}</div>`}
         <div class="tu-vline">${vehLine}</div>
         <div class="actions">${v ? `<button class="btn" data-tuveh="${esc(r.b)}">Dov'è adesso</button>` : ''}<button class="btn ghost" data-tutab="${esc(r.b)}" data-trip="${esc(tm[0])}">Apri tabella</button>
           ${i === 0 ? favBtn({ type: 'turno', line: q.line, on: q.on, off: q.off }) : ''}</div>
