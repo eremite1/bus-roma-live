@@ -93,19 +93,22 @@ class MainActivity : Activity() {
                 }
             }
         }
-        if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(URL_MAPPA)
+        // se Android aveva chiuso l'app in background, la mappa riapre quello che era aperto (?r=1)
+        web.loadUrl(if (savedInstanceState != null) "$URL_MAPPA?r=1" else URL_MAPPA)
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         // benvenuto a ogni apertura
-        val splash = benvenuto()
-        root.addView(splash, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
-
-        val chiudi = Runnable {
-            if (splash.parent != null) splash.animate().alpha(0f).setDuration(400).withEndAction { root.removeView(splash) }.start()
+        // benvenuto solo quando si apre l'app, non quando Android la ripristina
+        if (savedInstanceState == null) {
+            val splash = benvenuto()
+            root.addView(splash, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            val chiudi = Runnable {
+                if (splash.parent != null) splash.animate().alpha(0f).setDuration(400).withEndAction { root.removeView(splash) }.start()
+            }
+            splash.setOnClickListener { main.removeCallbacks(chiudi); chiudi.run() }
+            main.postDelayed(chiudi, 2800)
         }
-        splash.setOnClickListener { main.removeCallbacks(chiudi); chiudi.run() }
-        main.postDelayed(chiudi, 2800)
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) { tts?.language = Locale.ITALIAN; ttsReady = true }
@@ -274,7 +277,6 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // se l'app è rimasta in background a lungo, ricarico la mappa: così arrivano le novità
-        if (!primoResume && ::web.isInitialized && System.currentTimeMillis() - ultimaPausa > 5 * 60_000) web.reload()
         // aggiornamento obbligatorio: se l'utente è uscito dall'installazione, il messaggio ricompare
         if (!primoResume) Updater.check(this, quiet = true)
         primoResume = false

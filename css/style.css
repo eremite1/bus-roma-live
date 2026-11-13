@@ -447,3 +447,5 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 #northBtn { position: relative; }
 #northIco { transition: transform .15s; }
 .north-lock { position: absolute; right: -4px; bottom: -4px; font-size: 13px; }
+
+.chip-x { margin-left: 6px; padding: 0 4px; font-weight: 800; opacity: .8; }

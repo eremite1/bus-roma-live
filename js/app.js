@@ -245,22 +245,22 @@ function setupLayers() {
   // mezzi
   const dim = ['case', ['==', ['get', 'dim'], 1], 0.22, 1];
   map.addLayer({ id: 'veh-halo', type: 'circle', source: 'veh', filter: ['==', ['get', 'hl'], 1],
-    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 9, 12.5, 16, 14, 19, 17, 26], 'circle-color': '#F2B33D', 'circle-opacity': 0.42, 'circle-blur': 0.15 } });
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 10, 12.5, 19, 14, 23, 17, 30], 'circle-color': '#F2B33D', 'circle-opacity': 0.42, 'circle-blur': 0.15 } });
   // da lontano: pallini (con numero da zoom 12,5); da vicino (zoom 14+): icone di bus/tram/metro
   const ICON_Z = 14;
   map.addLayer({ id: 'veh-arrow', type: 'symbol', source: 'veh', minzoom: 12.5, maxzoom: ICON_Z, filter: ['>=', ['get', 'b'], 0],
     layout: { 'icon-image': ['case', ['==', ['get', 'hl'], 1], 'arrow-hl', ['concat', 'arrow-', ['get', 'kind']]],
       'icon-rotate': ['get', 'b'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 0.78, 14, 0.9] },
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 0.95, 14, 1.08] },
     paint: { 'icon-opacity': dim } });
   map.addLayer({ id: 'veh-arrow-l', type: 'symbol', source: 'veh', minzoom: ICON_Z, filter: ['>=', ['get', 'b'], 0],
     layout: { 'icon-image': ['case', ['==', ['get', 'hl'], 1], 'arrowL-hl', ['concat', 'arrowL-', ['get', 'kind']]],
       'icon-rotate': ['get', 'b'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
-      'icon-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 0.9, 17, 1.1] },
+      'icon-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 1.1, 17, 1.35] },
     paint: { 'icon-opacity': dim } });
   map.addLayer({ id: 'veh-dot', type: 'circle', source: 'veh', maxzoom: ICON_Z,
     paint: {
-      'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.2, 12, 4, 12.5, 9, 14, 10.5],
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 3.6, 11, 5.5, 12, 7, 12.5, 11, 14, 12.5],
       'circle-color': ['get', 'color'],
       'circle-stroke-color': ['case', ['==', ['get', 'hl'], 1], '#1B1D22', '#fff'],
       'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 9, 0.6, 12.5, 2],
@@ -268,12 +268,12 @@ function setupLayers() {
     } });
   map.addLayer({ id: 'veh-label', type: 'symbol', source: 'veh', minzoom: 12.5, maxzoom: ICON_Z,
     layout: { 'text-field': ['get', 'line'], 'text-font': font,
-      'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, ['case', ['>', ['length', ['get', 'line']], 3], 7.5, 9.5], 14, ['case', ['>', ['length', ['get', 'line']], 3], 8.5, 10.5]],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, ['case', ['>', ['length', ['get', 'line']], 3], 8.5, 11], 14, ['case', ['>', ['length', ['get', 'line']], 3], 9.5, 12]],
       'text-allow-overlap': true, 'text-ignore-placement': true },
     paint: { 'text-color': '#fff', 'text-opacity': dim } });
   map.addLayer({ id: 'veh-icon', type: 'symbol', source: 'veh', minzoom: ICON_Z,
     layout: { 'icon-image': ['concat', 'veh-', ['get', 'kind'], ['case', ['==', ['get', 'hl'], 1], '-hl', '']],
-      'icon-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 0.9, 17, 1.1],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], ICON_Z, 1.1, 17, 1.35],
       'icon-allow-overlap': true, 'icon-ignore-placement': true },
     paint: { 'icon-opacity': dim } });
   map.addLayer({ id: 'veh-pill', type: 'symbol', source: 'veh', minzoom: ICON_Z,
@@ -509,6 +509,7 @@ function openSheet(html, view, { tall = false, half = false } = {}) {
   state.view = view;
   sheetBody.scrollTop = 0;
   layoutFabs();
+  saveUi();
 }
 function closeSheet() {
   sheet.hidden = true;
@@ -518,12 +519,12 @@ function closeSheet() {
   state.focusTrips = null;
   clearInterval(state.viewTimer);
   if (v && (v.type === 'plan' || v.type === 'itin')) clearPlan();
-  if (v && v.type === 'line') clearLine();
-  if (v && v.type === 'driver') stopDriver();
   if (v && v.type === 'limitata' && driverActive()) { showDriverPanel(); return; }
-  map.getSource('route') && map.getSource('route').setData(EMPTY);
+  // la linea scelta resta sulla mappa finché non tocchi la ✕ sul pulsante Linea
+  if (state.lineFilter) drawLineShape(); else map.getSource('route') && map.getSource('route').setData(EMPTY);
   draw();
   layoutFabs();
+  saveUi();
 }
 function layoutFabs() {
   const fabs = document.querySelector('.fabs');
@@ -679,7 +680,7 @@ function showStop(stop) {
     <p class="sub">Fermata${stop.code ? ' ' + esc(stop.code) : ''} · prossimi passaggi</p>
     <div id="deps"><div class="spinner">Carico i passaggi…</div></div>
     <div class="actions"><button class="btn ghost" id="goStop">${ICON.walk} Portami qui</button></div>
-  `, { type: 'stop', id: stop.id });
+  `, { type: 'stop', id: stop.id, stop: { id: stop.id, name: stop.name, code: stop.code, lngLat: stop.lngLat } });
   $('goStop').onclick = () => setDestination({ name: stop.name, lngLat: stop.lngLat });
   const load = async () => {
     try {
@@ -865,8 +866,9 @@ function lineInfo(v) {
 }
 
 // ---------------- linea ----------------
-$('lineChip').onclick = () => {
-  if (state.lineFilter) { clearLine(); if (state.view?.type === 'line') closeSheet(); return; }
+$('lineChip').onclick = (e) => {
+  if (state.lineFilter && e.target.closest('#lineClear')) { if (state.view?.type === 'line') closeSheet(); clearLine(); return; }
+  if (state.lineFilter) { showLine(state.lineFilter, state.lineDir); return; }
   const f = $('lineForm');
   f.hidden = !f.hidden;
   if (!f.hidden) $('lineInput').focus();
@@ -884,7 +886,9 @@ async function setLine(name, dir = null) {
   state.lineFilter = name;
   if (changed) { state.delays = null; state.lineShapes = []; }
   $('lineChip').classList.add('active');
-  $('lineChipText').textContent = `Linea ${name} ✕`;
+  $('lineChipText').textContent = `Linea ${name}`;
+  $('lineClear').hidden = false;
+  saveUi();
   await loadShapes();
   if (state.lineFilter !== name) return;
   const routeIds = Object.entries(store.routes || {}).filter(([, r]) => String(r.n).toLowerCase() === name.toLowerCase()).map(([id]) => id);
@@ -1011,9 +1015,11 @@ function clearLine() {
   clearInterval(state.lineTimer);
   $('lineChip').classList.remove('active');
   $('lineChipText').textContent = 'Linea';
+  $('lineClear').hidden = true;
   map.getSource('route') && map.getSource('route').setData(EMPTY);
   draw();
   updateStatus();
+  saveUi();
 }
 
 function mapPadding() {
@@ -1614,11 +1620,63 @@ async function setupRealTraffic() {
     setInterval(() => { const s = map.getSource('traffic-real'); if (s && state.trafficOn) s.setTiles([url()]); }, 120000);
   } catch (e) { /* ponte senza traffico TomTom */ }
 }
-$('driverChip').onclick = () => { hideSuggest(); if (driverActive()) closeSheet(); else openDriver(); };
+$('driverChip').onclick = () => {
+  hideSuggest();
+  if (!driverActive()) return openDriver();
+  // modalità autista attiva: se il pannello è aperto la termina, altrimenti lo riapre
+  if (state.view?.type === 'driver' && !sheet.hidden) { closeSheet(); stopDriver(); } else showDriverPanel();
+};
 
 // ---------------- navigatore ----------------
 initNav({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf });
 $('navBtn').onclick = () => { hideSuggest(); openNavPicker(); };
+
+// ---------------- quello che è aperto resta aperto ----------------
+// Salvo mappa, linea e pannello aperto: se Android chiude l'app in background, alla riapertura torna tutto com'era.
+const SAVE_KEY = 'statoApp';
+let restoring = false;
+function saveUi() {
+  if (restoring) return;
+  try {
+    const c = map.getCenter(), v = state.view;
+    const keep = v && ['line', 'rientri', 'preferiti', 'turno', 'tabella', 'stop', 'vehicle', 'info'].includes(v.type)
+      ? { type: v.type, name: v.name, b: v.b, id: v.id, stop: v.stop } : null;
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ c: [c.lng, c.lat], z: map.getZoom(), br: map.getBearing(), p: map.getPitch(),
+      line: state.lineFilter, dir: state.lineDir, view: keep, t: Date.now() }));
+  } catch (e) { /* memoria del browser non disponibile */ }
+}
+map.on('moveend', saveUi);
+async function restoreUi() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) {}
+  // nell'app: sempre (si azzera solo se l'app viene arrestata); nel browser: se è di poco fa
+  const inApp = !!window.Android, recreated = /[?&]r=1/.test(location.search);
+  if (!s || (!inApp && Date.now() - s.t > 30 * 60_000) || (inApp && !recreated && Date.now() - s.t > 12 * 3600_000)) return;
+  restoring = true;
+  try {
+    map.jumpTo({ center: s.c, zoom: s.z, bearing: northLocked ? 0 : s.br || 0, pitch: s.p || 0 });
+    if (s.line) await setLine(s.line, s.dir);
+    const v = s.view;
+    if (v) {
+      if (v.type === 'line' && v.name) await showLine(v.name, s.dir);
+      else if (v.type === 'rientri') openRientri();
+      else if (v.type === 'preferiti') openPreferiti();
+      else if (v.type === 'turno') openTurno();
+      else if (v.type === 'tabella' && v.b) { await loadBlocksR(); openTabella(v.b); }
+      else if (v.type === 'stop' && v.stop) showStop(v.stop);
+      else if (v.type === 'info') $('infoBtn') && $('infoBtn').click();
+      else if (v.type === 'vehicle' && v.id) {
+        for (let i = 0; i < 40; i++) {
+          const x = state.shown.get(v.id);
+          if (x) { showVehicle(x.v); break; }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+    }
+  } catch (e) { console.warn('ripristino', e); }
+  restoring = false;
+  saveUi();
+}
 
 // ---------------- avvio ----------------
 map.on('load', async () => {
@@ -1628,6 +1686,7 @@ map.on('load', async () => {
   startSource(state.gps || state.est);
   loadTrips().then(() => { if (state.source) refreshVehicles(); });
   refreshStops();
+  restoreUi();
   // se il permesso di posizione è già stato dato in passato, mostro subito il pallino blu
   try {
     const perm = await navigator.permissions.query({ name: 'geolocation' });
