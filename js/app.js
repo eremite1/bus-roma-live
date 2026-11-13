@@ -317,14 +317,16 @@ async function refreshVehicles() {
     const res = src.kind === 'gps' ? await src.fetch() : await src.fetch(estBounds());
     if (src !== state.source) return;
     state.errors = 0;
+    if (src.kind === 'gps') state.gpsDown = null;
     state.lastOk = Date.now();
     state.feedTime = res.feedTime;
     applyVehicles(res.vehicles);
   } catch (e) {
     console.warn('Aggiornamento mezzi non riuscito', e);
     state.errors++;
-    if (src.kind === 'gps' && state.errors >= 3) {
-      toast('Il GPS di ATAC non risponde: passo alle posizioni stimate');
+    if (src.kind === 'gps' && (state.errors >= 3 || e.stale)) {
+      state.gpsDown = e.stale || null;
+      toast(e.stale ? `Il GPS di ATAC è fermo da ${e.stale} minuti: mostro le posizioni stimate` : 'Il GPS di ATAC non risponde: passo alle posizioni stimate', 6000);
       startSource(state.est);
       setTimeout(() => state.gps && state.source === state.est && startSource(state.gps), 3 * 60_000);
       return;
@@ -462,7 +464,7 @@ function updateStatus() {
     text = `${n.toLocaleString('it-IT')} mezzi · GPS · ${age < 90 ? age + ' s fa' : Math.round(age / 60) + ' min fa'}`;
     el.classList.add(age > 180 ? 'err' : 'live');
   } else {
-    text = `${n.toLocaleString('it-IT')} mezzi · posizioni stimate`;
+    text = `${n.toLocaleString('it-IT')} mezzi · posizioni stimate${state.gps ? (state.gpsDown ? ` (GPS ATAC fermo da ${state.gpsDown} min)` : ' (GPS ATAC non risponde)') : ''}`;
     el.classList.add('est');
   }
   $('statusText').textContent = text;

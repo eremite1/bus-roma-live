@@ -45,7 +45,14 @@ export class GpsSource {
     const res = await fetch(this.url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Ponte GPS: risposta ' + res.status);
     const feed = decodeVehicleFeed(await res.arrayBuffer());
-    const now = Date.now() / 1000;
+    // se tutto il flusso di ATAC è fermo (ultimo aggiornamento > 10 min fa) non è che i bus sono spenti:
+    // è il GPS di ATAC che non trasmette. Lo segnalo e l'app passa alle posizioni stimate.
+    if (feed.timestamp && Date.now() / 1000 - feed.timestamp > 600) {
+      const e = new Error('GPS ATAC fermo');
+      e.stale = Math.round((Date.now() / 1000 - feed.timestamp) / 60);
+      throw e;
+    }
+    const now = feed.timestamp || Date.now() / 1000;
     const list = [];
     const seen = new Set();
     for (const v of feed.vehicles) {

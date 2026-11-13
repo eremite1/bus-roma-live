@@ -114,6 +114,9 @@ def main():
 def traccia_spenti(out_dir, vp, line_of, now):
     """Ricorda l'ultima posizione di ogni vettura. Quelle che non trasmettono da oltre 10 minuti
     (fino a 8 ore) finiscono in spenti.json: la mappa le mostra in nero."""
+    if vp.header.timestamp and now.timestamp() - vp.header.timestamp > 600:
+        print("Flusso GPS di ATAC fermo: non aggiorno le vetture spente")
+        return
     path = os.path.join(out_dir, "ultimi.json")
     ultimi = json.load(open(path)) if os.path.exists(path) else {}
     nowts = int(now.timestamp())
@@ -139,7 +142,8 @@ def traccia_spenti(out_dir, vp, line_of, now):
                        round(v.position.bearing or 0), ts, trip, line_of(trip, v.trip.route_id) or (old[6] if old else "")]
     ultimi = {k: x for k, x in ultimi.items() if nowts - x[4] < 8 * 3600}
     json.dump(ultimi, open(path, "w"), separators=(",", ":"))
-    spenti = {k: x for k, x in ultimi.items() if nowts - x[4] > 600}
+    feedts = int(vp.header.timestamp or nowts)
+    spenti = {k: x for k, x in ultimi.items() if feedts - x[4] > 600}
     json.dump({"agg": nowts, "stat": stat, "spenti": spenti}, open(os.path.join(out_dir, "spenti.json"), "w"), separators=(",", ":"))
     print("Spenti:", len(spenti), stat)
 
