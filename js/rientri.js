@@ -65,6 +65,15 @@ export async function loadBlocks() {
   try { names = await (await fetch('data/tabelle.json', { cache: 'no-cache' })).json(); } catch (e) { names = {}; }
   try { rim = await (await fetch('data/rimessa.json', { cache: 'no-cache' })).json(); } catch (e) { rim = null; }
   try { veri = await (await fetch('data/tempi_veri.json', { cache: 'no-cache' })).json(); } catch (e) { veri = {}; }
+  // nomi confermati da tutti gli utenti (foto delle tabelle), salvati sul ponte
+  const PX = (window.CONFIG && window.CONFIG.PROXY_URL) || '';
+  if (PX) {
+    try {
+      const sh = await (await fetch(PX.replace(/\/$/, '') + '/nomi', { cache: 'no-store' })).json();
+      for (const [k, v] of Object.entries(sh.nomi || {})) if (!names[k]) names[k] = v;
+      for (const t of sh.tempi || []) { veri[t.D] = veri[t.D] || {}; if (!veri[t.D][t.p]) veri[t.D][t.p] = [t.m, t.h]; }
+    } catch (e) { /* ponte non aggiornato: solo i nomi del sito */ }
+  }
   Object.assign(names, store('tabelleNomi') || {});
   // dove si trova ogni deposito: la fermata più frequente tra le estremità dei suoi collegamenti
   const count = {};
@@ -129,7 +138,7 @@ export function tabName(b) {
   return n || `Tab. ${b.replace(/^0#/, '')}`;
 }
 export function setTabName(b, value) {
-  const trips = blocks && blocks[b];
+  const trips = tripsOf(b);
   if (!trips) return;
   const own = store('tabelleNomi') || {};
   const key = nameKey(trips);
@@ -306,6 +315,7 @@ async function render() {
 
 // ---------------- tabella completa (tutte le corse della giornata) ----------------
 export const blocksNow = () => blocks || {};
+export { loadDay, todayISO, tripsOf, rimessaRun as _rr };
 export async function openTabella(b, highlightTrip) {
   await loadBlocks();
   const trips = tripsOf(b);
@@ -349,8 +359,9 @@ export async function openTabella(b, highlightTrip) {
       <div class="tb-cols">${cells.join('')}</div>
     </div>
     <p class="muted">Orari ufficiali ATAC di oggi. In grigio i collegamenti col deposito; evidenziata la corsa in corso.</p>
-    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button><button class="btn ghost" id="tbIpo">≈ Ipotesi numero</button>${C.favBtn ? C.favBtn({ type: 'tabella', b, key: nameKey(trips), label: name }) : ''}${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
+    <div class="actions"><button class="btn ghost" id="tbName">✎ Nome tabella</button><button class="btn ghost" id="tbIpo">≈ Ipotesi numero</button><button class="btn ghost" id="tbFoto">📷 Foto tabella</button>${C.favBtn ? C.favBtn({ type: 'tabella', b, key: nameKey(trips), label: name }) : ''}${v ? '<button class="btn" id="tbVeh">Vedi la vettura</button>' : ''}</div>
   `, { type: 'tabella', b }, { tall: true });
+  document.getElementById('tbFoto').onclick = () => C.openFoto && C.openFoto();
   document.getElementById('tbIpo').onclick = () => C.toast(ipotesi(b), 9000);
   document.getElementById('tbName').onclick = () => {
     const val = window.prompt('Nome della tabella (es. 913/5). Lascia vuoto per togliere.', (names[nameKey(trips)] || names[plainKey(nameKey(trips))] || ''));
@@ -406,18 +417,42 @@ function mainLine(trips) {
 }
 const codeNum = (b) => parseInt(String(b).split('#').pop(), 10) || 0;
 const shortMorning = (trips) => { const e = trips[trips.length - 1][2]; return parseInt(e, 10) < 14 && parseInt(trips[0][1], 10) < 10; };
-export function ipotesi(b) {
-  const all = blocks || {}, trips = all[b];
+export function ipotesi(b, all0) {
+  const all = all0 || blocks || {}, trips = all[b];
   if (!trips) return 'Tabella non trovata';
   const L = mainLine(trips);
   const same = Object.keys(all).filter((k) => mainLine(all[k]) === L).sort((x, y) => codeNum(x) - codeNum(y));
-  const n1 = same.indexOf(b) + 1;
   const noShort = same.filter((k) => k === b || !shortMorning(all[k]));
-  const n2 = noShort.indexOf(b) + 1;
-  let msg = `Ipotesi: ${L}/${n1}`;
-  if (shortMorning(trips)) msg += ' (è un giro corto della mattina: potrebbe avere un numero a parte)';
-  else if (n2 !== n1) msg += ` oppure ${L}/${n2} se i giri corti della mattina non si contano`;
-  return msg + '. Confrontala col numero vero: se è diversa, dimmelo!';
+  // tabelle della stessa linea col numero già confermato = punti di riferimento
+  const anchors = [];
+  for (const k of same) {
+    const m = /^([^/]+)\/(\d+)$/.exec(names[nameKey(all[k])] || names[plainKey(nameKey(all[k]))] || '');
+    if (m && m[1].toLowerCase() === L.toLowerCase() && +m[2] < 60) anchors.push([k, +m[2]]);
+  }
+  const conf = anchors.find(([k]) => k === b);
+  if (conf) return `Numero confermato: ${L}/${conf[1]}`;
+  const guess = (list) => {
+    const i = list.indexOf(b);
+    if (!anchors.length) return { n: i + 1, ok: 0, tot: 0 };
+    // regola: numero = posizione nell'elenco + scarto; lo scarto viene dalla tabella confermata più vicina
+    let best = null;
+    for (const [k, n] of anchors) {
+      const j = list.indexOf(k);
+      if (j < 0) continue;
+      if (!best || Math.abs(j - i) < Math.abs(best.j - i)) best = { j, n };
+    }
+    if (!best) return { n: i + 1, ok: 0, tot: anchors.length };
+    const off = best.n - (best.j + 1);
+    const ok = anchors.filter(([k, n]) => list.indexOf(k) >= 0 && list.indexOf(k) + 1 + off === n).length;
+    return { n: i + 1 + off, ok, tot: anchors.length };
+  };
+  const g1 = guess(same), g2 = guess(noShort);
+  const best = g2.ok > g1.ok ? g2 : g1, other = best === g1 ? g2 : g1;
+  let msg = `Ipotesi: ${L}/${best.n}`;
+  if (other.n !== best.n) msg += ` (oppure ${L}/${other.n})`;
+  if (shortMorning(trips)) msg += ' · giro corto della mattina: potrebbe avere un numero a parte';
+  msg += anchors.length ? ` · basata su ${anchors.length} tabell${anchors.length === 1 ? 'a confermata' : 'e confermate'} della ${L}` : ' · nessuna tabella della linea ancora confermata';
+  return msg + '. Fotografa la tabella vera per confermarla!';
 }
 
 // Vettura che non trasmette più. Due casi utili agli autisti:

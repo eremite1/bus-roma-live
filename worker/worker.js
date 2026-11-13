@@ -37,6 +37,7 @@ export default {
 
     const url = new URL(request.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, '') || 'vehicles';
+    if (name === 'nomi') return nomiTabelle(request, env, { ...CORS, 'Access-Control-Allow-Origin': request.headers.get('Origin') || '*' });
     if (name === 'app') return paginaApp(url);
     if (name === 'BusRomaLive.apk') return scaricaApk(ctx);
     if (name === 'deviazione') return deviazione(request, env);
@@ -272,4 +273,28 @@ ol{text-align:left;color:#F3E3E8;line-height:1.6;padding-left:20px}small{color:#
 <li>Apri l'app e tocca <b>Richiedi codice su WhatsApp</b>.</li></ol>
 <small>App non ufficiale, non collegata ad ATAC. Dati aperti Roma Mobilità.</small></main></body></html>`;
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+
+// ---------- nomi delle tabelle confermati con la foto (condivisi tra tutti gli utenti) ----------
+// Servono un "KV namespace" collegato al worker col nome NOMI (vedi istruzioni). Senza, risponde 501.
+async function nomiTabelle(request, env, cors) {
+  const h = { 'Content-Type': 'application/json', ...(cors || {}) };
+  if (!env.NOMI) return new Response(JSON.stringify({ nomi: {}, tempi: [], errore: 'KV NOMI non collegato' }), { status: request.method === 'GET' ? 200 : 501, headers: h });
+  const db = (await env.NOMI.get('db', 'json')) || { nomi: {}, tempi: [], storia: [] };
+  if (request.method === 'GET') return new Response(JSON.stringify({ nomi: db.nomi, tempi: db.tempi }), { headers: { ...h, 'Cache-Control': 'max-age=60' } });
+  if (request.method !== 'POST') return new Response('{}', { status: 405, headers: h });
+  let x;
+  try { x = await request.json(); } catch (e) { return new Response('{"errore":"dati non validi"}', { status: 400, headers: h }); }
+  const key = String(x.key || '').slice(0, 120), name = String(x.name || '').slice(0, 20);
+  if (!key || !/^[0-9A-Za-z]{1,5}\/\d{1,3}$/.test(name)) return new Response('{"errore":"nome non valido"}', { status: 400, headers: h });
+  db.nomi[key] = name;
+  for (const t of (Array.isArray(x.tempi) ? x.tempi : []).slice(0, 4)) {
+    const D = String(t.D || 'G').slice(0, 2), p = String(t.p || '').slice(0, 80), m = +t.m, hr = +t.h;
+    if (p && m > 0 && m < 90 && hr >= 0 && hr < 24) { db.tempi = db.tempi.filter((y) => !(y.D === D && y.p === p)); db.tempi.push({ D, p, m, h: hr }); }
+  }
+  db.storia.push({ key, name, b: String(x.b || '').slice(0, 20), quando: new Date().toISOString() });
+  db.storia = db.storia.slice(-2000);
+  await env.NOMI.put('db', JSON.stringify(db));
+  return new Response('{"ok":true}', { headers: h });
 }

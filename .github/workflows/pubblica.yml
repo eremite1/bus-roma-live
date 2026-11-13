@@ -36,6 +36,25 @@ jobs:
         continue-on-error: true   # se Roma Mobilità non risponde, si tengono i dati del giorno prima
         run: python tools/build_static.py
 
+      - name: Aggiungi i nomi delle tabelle confermati con le foto
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          try:
+              sh = json.load(urllib.request.urlopen("https://bus-roma.ciabbro.workers.dev/nomi", timeout=20))
+          except Exception as e:
+              print("ponte non raggiungibile:", e); raise SystemExit(0)
+          p = "data/tabelle.json"; d = json.load(open(p))
+          new = {k: v for k, v in (sh.get("nomi") or {}).items() if k not in d}
+          d.update(new); json.dump(d, open(p, "w"), ensure_ascii=False, indent=1)
+          p = "data/tempi_veri.json"; t = json.load(open(p))
+          for x in sh.get("tempi") or []:
+              t.setdefault(x["D"], {}).setdefault(x["p"], [x["m"], x["h"]])
+          json.dump(t, open(p, "w"), ensure_ascii=False, indent=1)
+          print("nomi nuovi:", len(new))
+          PY
+
       - name: Salva i dati nel repository
         run: |
           git config user.name "github-actions[bot]"

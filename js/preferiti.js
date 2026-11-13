@@ -142,6 +142,7 @@ let turnoTimer = null;
 export async function openTurno(saved) {
   const last = saved || ls('turnoUltimo') || {};
   C.openSheet(`<h2>🕑 Il mio turno</h2>
+    <button class="btn ghost" type="button" id="tuFoto" style="width:100%;margin-bottom:6px">📷 Fotografa la tabella</button>
     <p class="sub">Scrivi la linea e l'orario di montata <b>o</b> di smontata (con tutti e due è più preciso), oppure direttamente la tabella, es. <b>80-1</b>: trovo la vettura che la sta facendo.</p>
     <form id="tuForm" class="tu-form">
       <label>Linea <input id="tuLine" value="${esc(last.line || '')}" placeholder="es. 913 oppure 80-1" autocomplete="off"></label>
@@ -158,6 +159,7 @@ export async function openTurno(saved) {
     ls('turnoUltimo', q);
     renderTurno(q);
   };
+  document.getElementById('tuFoto').onclick = () => C.openFoto && C.openFoto();
   document.getElementById('tuForm').onsubmit = (e) => { e.preventDefault(); run(); };
   if (last.on || last.off || TAB_RE.test(last.line || '')) run();
   clearInterval(turnoTimer);

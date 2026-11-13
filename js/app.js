@@ -8,6 +8,7 @@ import { Traffic, setupTrafficLayer } from './traffic.js';
 import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, update as updateDriver } from './driver.js';
 import { initLimitata, openLimitata } from './limitata.js';
 import { initStorico, openStorico } from './storico.js';
+import { initFoto, openFoto } from './foto.js';
 import { initPreferiti, openPreferiti, openTurno, favBtn } from './preferiti.js';
 import { initRientri, ghostInfo, loadBlocks as loadBlocksR, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
@@ -1571,9 +1572,10 @@ $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
   traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
-initRientri({ favBtn, state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
+initRientri({ openFoto, favBtn, state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
   delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
-initPreferiti({ state, openSheet, toast, showVehicle: (v) => showVehicle(v), showPoint, showLine: (n) => showLine(n), refreshAtac: () => PROXY && fetchAtacDelays() });
+initFoto({ openSheet, toast });
+initPreferiti({ openFoto, state, openSheet, toast, showVehicle: (v) => showVehicle(v), showPoint, showLine: (n) => showLine(n), refreshAtac: () => PROXY && fetchAtacDelays() });
 $('navChip').onclick = () => { hideSuggest(); openNavPicker(); };
 {
   const nb = $('northBtn');
