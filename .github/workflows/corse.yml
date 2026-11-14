@@ -1,0 +1,42 @@
+name: Raccolta continua (corse e vetture)
+
+on:
+  schedule:
+    - cron: '7 */6 * * *'   # di riserva: normalmente riparte da sola alla fine di ogni giro
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['tools/corse_rt.py', '.github/workflows/corse.yml']
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: corse
+  cancel-in-progress: false
+
+jobs:
+  raccogli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install gtfs-realtime-bindings
+      - name: Prendi l'archivio (ramo "storico")
+        run: |
+          git fetch origin storico
+          git worktree add archivio -B storico-lavoro origin/storico
+          cd archivio
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Raccogli per quasi 6 ore
+        run: python tools/corse_rt.py archivio 335
+      - name: Riparti
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run corse.yml --ref main

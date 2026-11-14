@@ -54,7 +54,6 @@ def main():
 
     vp = feed("vehicles")
     if vp:
-        traccia_spenti(out_dir, vp, line_of, now)
         count = {}
         for e in vp.entity:
             if not e.HasField("vehicle"):

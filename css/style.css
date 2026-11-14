@@ -450,3 +450,8 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .north-lock { position: absolute; right: -4px; bottom: -4px; font-size: 13px; }
 
 .chip-x { margin-left: 6px; padding: 0 4px; font-weight: 800; opacity: .8; }
+.tb-cols [data-st] { cursor: pointer; }
+.tb-hist { grid-column: 1 / -1; background: var(--bg-2, #f4f1ec); border-radius: 8px; padding: 6px 8px; margin: 2px 0 6px; font-size: 13px; }
+.tb-hrow { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.tb-hrow .early { color: #2563EB; font-weight: 600; }
+.tb-hrow .ontime { color: #0B7A3E; font-weight: 600; }

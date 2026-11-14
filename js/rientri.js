@@ -334,7 +334,7 @@ export async function openTabella(b, highlightTrip) {
     const prevColl = prev && (isColl(prev[3]) || (i - 1 === 0 && DEPOT_STOPS.has(prev[4])));
     const newLine = !prev || prev[3] !== t[3] || !!prevColl !== !!coll;
     cells.push(`${newLine ? `<div class="tb-line">${esc(t[3])}${coll ? ' <small>collegamento</small>' : ''}</div>` : ''}
-      <div class="tb-cell${coll ? ' tb-coll' : ''}${t[0] === cur ? ' tb-cur' : ''}"><b>${esc(h24(t[1]))} ${esc(up(t[4]))}</b><span>${esc(h24(t[2]))} ${esc(up(t[5]))}</span></div>`);
+      <div class="tb-cell${coll ? ' tb-coll' : ''}${t[0] === cur ? ' tb-cur' : ''}"${coll ? '' : ` data-st="${esc(t[0])}"`}><b>${esc(h24(t[1]))} ${esc(up(t[4]))}</b><span>${esc(h24(t[2]))} ${esc(up(t[5]))}</span></div>`);
   });
   const lines = [...new Set(trips.map((t) => t[3]).filter((l) => !isColl(l)))];
   const name = tabName(b);
@@ -369,6 +369,16 @@ export async function openTabella(b, highlightTrip) {
   };
   const vb = document.getElementById('tbVeh');
   if (vb) vb.onclick = () => { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); };
+  // tocco su una corsa: ritardi degli stessi giorni passati
+  const baseDate = blocks[b] ? todayISO() : (Object.entries(dayCache).find(([, d]) => d.blocks && d.blocks[b]) || [todayISO()])[0];
+  document.querySelectorAll('.tb-cols [data-st]').forEach((cell) => {
+    cell.onclick = () => {
+      const old = cell.nextElementSibling;
+      if (old && old.classList.contains('tb-hist')) { old.remove(); return; }
+      const t = trips.find((x) => x[0] === cell.dataset.st);
+      if (t) storicoCorsa(cell, t, baseDate);
+    };
+  });
   const curRow = document.querySelector('.tb-cols .tb-cur');
   if (curRow) setTimeout(() => curRow.scrollIntoView({ block: 'center' }), 100);
 }
@@ -482,4 +492,38 @@ export function ghostInfo(v) {
   if (N < mins(next[1]) + 5) return null;
   const tipo = rientro - N <= 120 ? 'recupero' : 'riprende';
   return { missed: next[1], b, name: tabName(b), cur, next, rientro: trips[trips.length - 1][2], tipo, dep: depotOf(trips, runsOf(trips).slice(-1)[0]) };
+}
+
+// ---------- storico ritardi di una corsa (raccolti dall'archivio) ----------
+const corseCache = {};
+async function storicoCorsa(cell, t, baseDate) {
+  const box = document.createElement('div');
+  box.className = 'tb-hist';
+  box.innerHTML = '<span class="muted">Cerco i giorni precedenti…</span>';
+  cell.after(box);
+  // stesso tipo di giorno: sabati con sabati, domeniche con domeniche, feriali con feriali
+  const base = new Date(baseDate + 'T12:00'), wd = base.getDay();
+  const dates = [];
+  for (let i = 1; i <= 60 && dates.length < 10; i++) {
+    const d = new Date(base); d.setDate(d.getDate() - i);
+    const w = d.getDay();
+    if ((wd === 0 || wd === 6) ? w === wd : (w >= 1 && w <= 5)) dates.push(d);
+  }
+  const key = `${t[3]}@${t[1]}>${t[4]}`;
+  const h = String(Math.floor(mins(t[2]) / 60)).padStart(2, '0');
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const res = await Promise.all(dates.map(async (d) => {
+    const url = `https://raw.githubusercontent.com/eremite1/bus-roma-live/storico/corse/${iso(d)}/h${h}.json`;
+    if (!(url in corseCache)) corseCache[url] = fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const f = await corseCache[url];
+    return f && f[key] ? { d, v: f[key] } : null;
+  }));
+  const ok = res.filter(Boolean);
+  const GN = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+  const fmt = (x) => (x == null ? '–' : `<span class="${x >= 5 ? 'late' : x <= -2 ? 'early' : 'ontime'}">${x > 0 ? '+' : ''}${Math.round(x)}′</span>`);
+  if (!ok.length) { box.innerHTML = '<span class="muted">Ancora nessun dato per questa corsa nei giorni precedenti (l\'archivio si sta riempiendo).</span>'; return; }
+  const arr = ok.map((x) => x.v[1]).filter((x) => x != null);
+  const avg = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  box.innerHTML = `<div class="muted">Corsa ${esc(t[1])} nei ${wd === 6 ? 'sabati' : wd === 0 ? 'domeniche' : 'giorni feriali'} precedenti${avg != null ? ` · arrivo medio ${fmt(avg)}` : ''}</div>
+    ${ok.map((x) => `<div class="tb-hrow"><span>${GN[x.d.getDay()]} ${x.d.getDate()}/${x.d.getMonth() + 1}</span><span>partenza ${fmt(x.v[0])}</span><span>arrivo ${fmt(x.v[1])}</span></div>`).join('')}`;
 }

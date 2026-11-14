@@ -43,4 +43,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "Archivio $(date -u +%Y-%m-%dT%H:%M)" || exit 0
-          git push origin HEAD:storico
+          for i in 1 2 3 4; do
+            git fetch -q origin storico && git rebase -q -X theirs origin/storico && git push -q origin HEAD:storico && break
+            sleep 5
+          done
