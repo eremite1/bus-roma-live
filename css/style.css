@@ -434,7 +434,8 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .pf-add input, .tu-form input { flex: 1; min-width: 0; font: inherit; padding: 9px 10px; border: 1px solid #ccc; border-radius: 10px; }
 .tu-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; margin: 10px 0 14px; }
 .tu-form label { display: flex; flex-direction: column; font-size: 13px; color: #555; gap: 4px; }
-.tu-form .btn, .tu-form label:first-child { grid-column: 1 / -1; }
+.tu-form .btn { grid-column: 1 / -1; }
+.tu-form select { width: 100%; font: inherit; padding: 9px 6px; border: 1px solid #ccc; border-radius: 10px; }
 .tu-form input { width: 100%; box-sizing: border-box; }
 .tu-card { min-width: 0; overflow-wrap: anywhere; }
 .tu-card { border: 1px solid #ddd; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; display: grid; gap: 4px; }

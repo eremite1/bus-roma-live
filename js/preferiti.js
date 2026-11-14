@@ -2,7 +2,14 @@
 // Il turno: scrivi linea, orario di montata e di smontata; cerco nelle tabelle di oggi quella che
 // fa una corsa a quell'ora e finisce a quell'ora, e dico quale vettura la sta facendo adesso.
 
-import { loadBlocks, blocksNow, vehiclesByBlock, nameKey, tabName, openTabella, isColl, depotName } from './rientri.js';
+import { loadBlocks, blocksNow as blocksToday, vehiclesByBlock as vbToday, nameKey, tabName, openTabella, isColl, depotName, loadDay, todayISO } from './rientri.js';
+
+// giorno scelto nella ricerca del turno (null = oggi): tabelle di quel giorno, niente vetture in diretta
+let dayBlocks = null;
+const blocksNow = () => dayBlocks || blocksToday();
+const vehiclesByBlock = () => (dayBlocks ? new Map() : vbToday());
+const GNOMI = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+const dayLabel = (d) => { if (!d || d === todayISO()) return 'Oggi'; const x = new Date(d + 'T12:00'); return `${GNOMI[x.getDay()]} ${x.getDate()}/${x.getMonth() + 1}`; };
 
 let C = null;
 export function initPreferiti(ctx) { C = ctx; }
@@ -145,6 +152,7 @@ export async function openTurno(saved) {
     <button class="btn ghost" type="button" id="tuFoto" style="width:100%;margin-bottom:6px">📷 Fotografa la tabella</button>
     <p class="sub">Scrivi la linea e l'orario di montata <b>o</b> di smontata (con tutti e due è più preciso), oppure direttamente la tabella, es. <b>80-1</b>: trovo la vettura che la sta facendo.</p>
     <form id="tuForm" class="tu-form">
+      <label>Giorno <select id="tuDay"><option value="">Oggi</option></select></label>
       <label>Linea <input id="tuLine" value="${esc(last.line || '')}" placeholder="es. 913 oppure 80-1" autocomplete="off"></label>
       <label>Montata <input id="tuOn" type="time" value="${esc(last.on || '')}"></label>
       <label>Smontata <input id="tuOff" type="time" value="${esc(last.off || '')}"></label>
@@ -153,8 +161,13 @@ export async function openTurno(saved) {
     <div id="tuRes"></div>`, { type: 'turno' }, { tall: true });
   await loadBlocks();
   C.refreshAtac && C.refreshAtac();
+  try {
+    const idx = await (await fetch('data/giorni/indice.json', { cache: 'no-cache' })).json();
+    const sel = document.getElementById('tuDay');
+    for (const d of idx.filter((x) => x > todayISO())) sel.insertAdjacentHTML('beforeend', `<option value="${d}"${last.date === d ? ' selected' : ''}>${dayLabel(d)}</option>`);
+  } catch (e) { /* solo oggi */ }
   const run = () => {
-    const q = { type: 'turno', line: document.getElementById('tuLine').value.trim(), on: document.getElementById('tuOn').value, off: document.getElementById('tuOff').value };
+    const q = { type: 'turno', date: document.getElementById('tuDay').value, line: document.getElementById('tuLine').value.trim(), on: document.getElementById('tuOn').value, off: document.getElementById('tuOff').value };
     if (!q.on && !q.off && !TAB_RE.test(q.line)) { C.toast("Scrivi l'orario di montata o di smontata, oppure la tabella (es. 80-1)"); return; }
     ls('turnoUltimo', q);
     renderTurno(q);
@@ -194,8 +207,11 @@ function renderTabella(el, q, m) {
   el.querySelectorAll('[data-tutab]').forEach((x) => x.onclick = () => openTabella(x.dataset.tutab));
 }
 
-function renderTurno(q) {
-  const el = document.getElementById('tuRes');
+async function renderTurno(q) {
+  let el = document.getElementById('tuRes');
+  if (!el) return;
+  dayBlocks = q.date && q.date !== todayISO() ? (await loadDay(q.date)).blocks || {} : null;
+  el = document.getElementById('tuRes');
   if (!el) return;
   el.dataset.q = JSON.stringify(q);
   const tm0 = TAB_RE.exec(q.line || '');
@@ -203,11 +219,11 @@ function renderTurno(q) {
   const res = findTurno(q.line, q.on, q.off);
   const vb = vehiclesByBlock();
   if (!res.length) {
-    el.innerHTML = `<p class="sub">Nessuna tabella di oggi${q.line ? ' sulla ' + esc(q.line) : ''} corrisponde a ${[q.on && 'montata ' + esc(q.on), q.off && 'smontata ' + esc(q.off)].filter(Boolean).join(' e ')}. Controlla linea e orari${q.line ? ', oppure prova senza linea' : ''}.</p>`;
+    el.innerHTML = `<p class="sub">Nessuna tabella di ${dayLabel(q.date).toLowerCase()}${q.line ? ' sulla ' + esc(q.line) : ''} corrisponde a ${[q.on && 'montata ' + esc(q.on), q.off && 'smontata ' + esc(q.off)].filter(Boolean).join(' e ')}. Controlla linea e orari${q.line ? ', oppure prova senza linea' : ''}.</p>`;
     return;
   }
-  const now = new Date().getHours() * 60 + new Date().getMinutes();
-  el.innerHTML = (res.length > 1 && res[0].score === res[1].score ? '<p class="muted">Più tabelle corrispondono: scegli la tua.</p>' : '') +
+  const now = dayBlocks ? -1 : new Date().getHours() * 60 + new Date().getMinutes();
+  el.innerHTML = (q.date ? `<p class="muted">Tabelle di <b>${esc(dayLabel(q.date))}</b> (le vetture si vedono solo il giorno stesso).</p>` : '') + (res.length > 1 && res[0].score === res[1].score ? '<p class="muted">Più tabelle corrispondono: scegli la tua.</p>' : '') +
     res.map((r, i) => {
       const v = vb.get(r.b);
       const tm = !q.on ? null : r.dm <= 3 || !r.inCorso ? r.tm : r.inCorso;
