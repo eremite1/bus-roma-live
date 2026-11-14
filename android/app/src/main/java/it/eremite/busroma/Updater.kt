@@ -124,7 +124,7 @@ object Updater {
     /** Apre l'installatore di Android. Se serve, chiede prima il permesso "installa app sconosciute". */
     private fun install(act: Activity, file: File) {
         if (!act.packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(act, "Consenti l'installazione per Bus Roma Live, poi torna indietro e premi di nuovo Aggiorna", Toast.LENGTH_LONG).show()
+            Toast.makeText(act, "Consenti l'installazione per CarlettiBus, poi torna indietro e premi di nuovo Aggiorna", Toast.LENGTH_LONG).show()
             act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${act.packageName}")))
             return
         }

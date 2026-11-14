@@ -134,7 +134,7 @@ class MainActivity : Activity() {
             setPadding(0, (top * dp).toInt(), 0, 0)
         }
         col.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams((96 * dp).toInt(), (96 * dp).toInt()))
-        col.addView(testo("Bus Roma Live", 26f, "#FFFFFF", true, 16))
+        col.addView(testo("CarlettiBus", 26f, "#FFFFFF", true, 16))
         col.addView(testo("Per entrare serve un codice di accesso. Si chiede una volta sola.", 16f, "#F3E3E8", top = 12))
         val bott = { t: String, bg: String -> android.widget.Button(this).apply {
             text = t; textSize = 17f; setTextColor(Color.WHITE); isAllCaps = false
@@ -144,7 +144,7 @@ class MainActivity : Activity() {
         val lp = { top: Int -> LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (top * dp).toInt() } }
         col.addView(bott("📲  Richiedi codice su WhatsApp", "#25D366").apply {
             setOnClickListener {
-                val msg = "Ciao, mi mandi il codice per Bus Roma Live? Il mio telefono: $tel"
+                val msg = "Ciao, mi mandi il codice per CarlettiBus? Il mio telefono: $tel"
                 val uri = Uri.parse("https://wa.me/${Accesso.WHATSAPP}?text=" + Uri.encode(msg))
                 try { startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (e: Exception) { }
             }
@@ -186,7 +186,7 @@ class MainActivity : Activity() {
             setPadding(0, (24 * dp).toInt(), 0, 0)
         })
         col.addView(TextView(this).apply {
-            text = "Bus Roma Live"
+            text = "CarlettiBus"
             textSize = 20f
             setTextColor(Color.parseColor("#F2B33D"))
             gravity = Gravity.CENTER

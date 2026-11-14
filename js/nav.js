@@ -172,7 +172,7 @@ function downloadGpx(linea, o) {
   const pts = decodePolyline(o.p, 5);
   const name = `Linea ${linea} verso ${o.h || ''}`.trim();
   const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Bus Roma Live" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="CarlettiBus" xmlns="http://www.topografix.com/GPX/1/1">
 <metadata><name>${esc(name)}</name></metadata>
 ${o.stops.map((s) => `<wpt lat="${s[1]}" lon="${s[0]}"><name>${esc(s[2])}</name><type>Fermata</type></wpt>`).join('\n')}
 <trk><name>${esc(name)}</name><trkseg>

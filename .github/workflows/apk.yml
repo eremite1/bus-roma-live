@@ -28,13 +28,13 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
       - name: Rinomina
         run: |
-          cp app/build/outputs/apk/release/app-release.apk ../BusRomaLive.apk
+          cp app/build/outputs/apk/release/app-release.apk ../CarlettiBus.apk
           git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' | sed '/^$/d' > ../novita.txt
       - name: Pubblica
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
-          name: Bus Roma Live 1.0.${{ github.run_number }}
-          files: BusRomaLive.apk
+          name: CarlettiBus 1.0.${{ github.run_number }}
+          files: CarlettiBus.apk
           body_path: novita.txt
           make_latest: true

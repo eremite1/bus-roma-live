@@ -1,4 +1,4 @@
-// Bus Roma Live — mappa, fermate, linee e calcolo del percorso.
+// CarlettiBus — mappa, fermate, linee e calcolo del percorso.
 
 import { api, decodePolyline, rawTripId } from './api.js';
 import { decodeTripUpdates } from './gtfsrt.js';
@@ -1423,7 +1423,7 @@ $('infoBtn').onclick = () => {
   const gps = state.source && state.source.kind === 'gps';
   const upd = store.meta ? new Date(store.meta.generated).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' }) : 'non ancora disponibile';
   openSheet(`<div class="info">
-    <h2>Bus Roma Live</h2>
+    <h2>CarlettiBus</h2>
     <p>Mappa in tempo reale di bus e tram ATAC. Tocca un mezzo per vedere dove va e le sue fermate, tocca una fermata per i prossimi passaggi, scrivi una destinazione in alto per il percorso.</p>
     <div class="section-title">Colori</div>
     <div class="legend">
