@@ -42,7 +42,7 @@ jobs:
           python - <<'PY'
           import json, urllib.request
           try:
-              sh = json.load(urllib.request.urlopen("https://bus-roma.ciabbro.workers.dev/nomi", timeout=20))
+              sh = json.load(urllib.request.urlopen("https://bus-roma.carlettibus.workers.dev/nomi", timeout=20))
           except Exception as e:
               print("ponte non raggiungibile:", e); raise SystemExit(0)
           p = "data/tabelle.json"; d = json.load(open(p))
