@@ -466,3 +466,51 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 
 .rn-when { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .rn-stat { background: #EEF6F0; border-radius: 8px; padding: 6px 10px; margin: 6px 0; font-size: 14px; }
+
+/* ---------- cruscotto autista (stile SIG, moderno) ---------- */
+.cz { background: #12151B; color: #E8ECF2; border-radius: 16px; padding: 12px; margin: 2px 0 8px; display: grid; gap: 10px; }
+.cz small { display: block; font-size: 11px; color: #8B94A3; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.cz b { font-weight: 800; }
+.cz-dim { color: #8B94A3; font-size: 12px; }
+.cz-top { display: flex; align-items: center; gap: 10px; margin-right: 40px; }
+.cz-dest { flex: 1; min-width: 0; }
+.cz-dest b { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cz-clock { font-size: 26px; font-weight: 800; letter-spacing: .02em; color: #fff; }
+.cz-row { display: grid; grid-template-columns: 1.1fr 1fr; gap: 10px; }
+.cz-delay { border-radius: 14px; padding: 10px 12px; text-align: center; background: #232833; }
+.cz-delay b { display: block; font-size: 48px; line-height: 1.05; }
+.cz-delay small { color: inherit; opacity: .85; }
+.cz-delay.ok { background: #0F3D26; color: #5BE49B; }
+.cz-delay.early { background: #142B5C; color: #7EB0FF; }
+.cz-delay.late { background: #4A2A06; color: #FFB34D; }
+.cz-delay.vlate { background: #4D1111; color: #FF7A7A; }
+.cz-info { display: grid; gap: 8px; align-content: center; }
+.cz-info > div { background: #1B2029; border-radius: 12px; padding: 8px 10px; }
+.cz-info b { display: block; font-size: 20px; }
+.cz-info b + small { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.cz-tip { background: #2A2410; color: #FFD666; border-radius: 12px; padding: 8px 10px; font-weight: 700; font-size: 14px; }
+.cz-tip.warn { background: #4D1111; color: #FFB0B0; }
+.cz-strip { background: #1B2029; border-radius: 12px; padding: 10px; }
+.cz-line { display: flex; align-items: center; gap: 4px; }
+.cz-seg { height: 6px; border-radius: 3px; background: #3DDC84; min-width: 12px; }
+.cz-seg.tight { background: #FF5A5A; }
+.cz-seg.wide { background: #FFB34D; }
+.cz-seg.none { background: repeating-linear-gradient(90deg, #3A4150 0 6px, transparent 6px 10px); }
+.cz-me { background: #fff; color: #12151B; font-weight: 800; border-radius: 8px; padding: 4px 8px; font-size: 14px; }
+.cz-bus { display: grid; justify-items: center; gap: 2px; font-size: 14px; max-width: 34%; }
+.cz-bus small { text-transform: none; letter-spacing: 0; font-weight: 600; white-space: nowrap; }
+.cz-bus .punct { font-size: 11px; padding: 1px 6px; }
+.cz-sub { text-align: center; font-size: 11px; color: #8B94A3; margin-top: 6px; }
+.cz-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cz-grid > div { background: #1B2029; border-radius: 12px; padding: 8px; min-width: 0; }
+.cz-grid b { display: block; font-size: 20px; }
+.cz-grid b + small { text-transform: none; letter-spacing: 0; font-weight: 600; overflow-wrap: anywhere; }
+.cz-h { font-weight: 800; font-size: 13px; margin-bottom: 4px; }
+.cz-stop { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid #262C37; font-size: 14px; }
+.cz-stop.first { font-size: 17px; font-weight: 800; border-top: 0; }
+.cz-stop small { text-transform: none; letter-spacing: 0; white-space: nowrap; }
+.cz-prog { height: 4px; background: #262C37; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.cz-prog i { display: block; height: 100%; background: #7EB0FF; }
+.cz-traffic { font-size: 14px; font-weight: 700; }
+.cz-t.ok { color: #5BE49B; } .cz-t.mid { color: #FFB34D; } .cz-t.slow { color: #FF7A7A; }
+@media (max-width: 380px) { .cz-delay b { font-size: 40px; } .cz-grid b { font-size: 17px; } .cz-clock { font-size: 22px; } }
