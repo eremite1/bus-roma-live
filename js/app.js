@@ -9,6 +9,7 @@ import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, upda
 import { initLimitata, openLimitata } from './limitata.js';
 import { initStorico, openStorico } from './storico.js';
 import { initFoto, openFoto } from './foto.js';
+import { initMonopattini, toggleScooters, scooterState, scooterOption } from './monopattini.js';
 import { initPreferiti, openPreferiti, openTurno, favBtn } from './preferiti.js';
 import { initRientri, ghostInfo, loadBlocks as loadBlocksR, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
@@ -1216,6 +1217,7 @@ async function plan({ silent = false } = {}) {
     if (!state.view || (state.view.type !== 'plan' && state.view.type !== 'itin')) return;
     state.itins = (res.itineraries || []).filter((it) => state.planWhen || new Date(it.endTime) > Date.now()).slice(0, 6);
     state.direct = res.direct || [];
+    state.scooter = state.planWhen ? null : await scooterOption(state.from.lngLat, state.to.lngLat).catch(() => null);
     if (silent && state.view.type === 'itin') {
       const idx = state.itins.findIndex((it) => firstTransitTrip(it) === keepTrip);
       if (idx >= 0) { showItinerary(idx, { keepView: true }); return; }
@@ -1274,6 +1276,14 @@ function renderPlanList() {
       <div class="itin-legs">${legBadges(it)}</div>
       <div class="itin-note">${note}</div></button>`;
   });
+  const sc = state.scooter;
+  if (sc) {
+    const arr = new Date(Date.now() + sc.total * 60_000);
+    const card = `<button class="itin" data-scooter="1"><div class="itin-top"><span class="itin-time">🛴 Monopattino ${esc(sc.op)} → ${fmtTime(arr.toISOString())}</span><span class="itin-dur">${sc.total} min</span></div>
+      <div class="itin-note">${sc.walkMin} min a piedi (${sc.walkM} m) fino al monopattino, poi ${sc.rideMin} min in monopattino (${sc.rideKm.toFixed(1)} km)${sc.range ? ` · autonomia ${sc.range} km` : ''}</div></button>`;
+    const bestEnd = state.itins.length ? Math.min(...state.itins.map((it) => new Date(it.endTime).getTime())) : Infinity;
+    if (arr.getTime() < bestEnd) cards.unshift(card); else cards.push(card);
+  }
   const walk = state.direct.find((d) => d.legs && d.legs.length);
   if (walk) {
     cards.push(`<button class="itin" data-direct="1"><div class="itin-top"><span class="itin-time">Tutto a piedi</span><span class="itin-dur">${fmtDur(walk.duration)}</span></div>
@@ -1282,12 +1292,23 @@ function renderPlanList() {
   openSheet(`${title}<div class="itins">${cards.join('')}</div>
     <p class="muted" style="margin-top:12px">I percorsi tengono conto dei ritardi in tempo reale e si aggiornano ogni minuto.</p>`, { type: 'plan' }, { tall: true });
   sheetBody.querySelectorAll('.itin').forEach((b) => {
-    b.onclick = () => (b.dataset.direct ? showWalk(walk) : showItinerary(+b.dataset.i));
+    b.onclick = () => (b.dataset.scooter ? showScooter(state.scooter) : b.dataset.direct ? showWalk(walk) : showItinerary(+b.dataset.i));
   });
   bindWhen();
   const pts = [state.from.lngLat, state.to.lngLat];
   drawPlan(null);
   fitTo(pts);
+}
+
+function showScooter(sc) {
+  if (!sc) return;
+  const fc = { type: 'FeatureCollection', features: [
+    { type: 'Feature', geometry: { type: 'LineString', coordinates: [state.from.lngLat, sc.at] }, properties: { color: '#555B66', walk: 1 } },
+    { type: 'Feature', geometry: { type: 'LineString', coordinates: [sc.at, state.to.lngLat] }, properties: { color: '#10B981' } },
+  ] };
+  map.getSource('plan') && map.getSource('plan').setData(fc);
+  fitTo([state.from.lngLat, sc.at, state.to.lngLat]);
+  toast(`Monopattino ${sc.op} a ${sc.walkM} m: segui la linea grigia a piedi, poi quella verde (percorso indicativo in linea d'aria)`, 7000);
 }
 
 function bindWhen() {
@@ -1594,6 +1615,9 @@ initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet
 initRientri({ openFoto, favBtn, state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
   delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
 initFoto({ openSheet, toast });
+initMonopattini({ map, toast });
+$('scooterChip').classList.toggle('on', scooterState.on);
+$('scooterChip').onclick = async () => { hideSuggest(); $('scooterChip').classList.toggle('on', await toggleScooters()); };
 initPreferiti({ openFoto, state, openSheet, toast, showVehicle: (v) => showVehicle(v), showPoint, showLine: (n) => showLine(n), refreshAtac: () => PROXY && fetchAtacDelays() });
 $('navChip').onclick = () => { hideSuggest(); openNavPicker(); };
 {

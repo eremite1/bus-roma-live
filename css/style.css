@@ -457,3 +457,6 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .tb-hrow .ontime { color: #0B7A3E; font-weight: 600; }
 
 .beta-tag { position: fixed; left: 8px; bottom: 8px; z-index: 50; background: #F2B33D; color: #1B1D22; font-weight: 800; font-size: 11px; padding: 2px 7px; border-radius: 6px; pointer-events: none; }
+
+#scooterChip.on { background: #10B981; color: #fff; }
+#scooterChip.on svg { stroke: #fff; }

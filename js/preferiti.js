@@ -67,7 +67,7 @@ function resolveFav(f) {
   if (f.type === 'tabella') return findBlock(f);
   const tmm = TAB_RE.exec(f.line || '');
   if (tmm) { const w = `${tmm[1]}/${+tmm[2]}`.toLowerCase(); return Object.keys(blocksNow()).find((k) => tabName(k).toLowerCase() === w) || ''; }
-  const best = f.on ? findTurno(f.line, f.on, f.off)[0] : null;
+  const best = f.on ? findTurno(f.line, f.on, f.off, f.cap)[0] : null;
   return best ? best.b : '';
 }
 function renderPref() {
@@ -109,40 +109,64 @@ function renderPref() {
 // ---------------- il mio turno ----------------
 // Punteggio di ogni tabella: quanto la montata è vicina alla partenza di una corsa e la smontata
 // all'arrivo di una corsa (minuti di differenza). Vince il punteggio più basso.
-export function findTurno(line, on, off) {
-  // basta la montata OPPURE la smontata (meglio entrambe). Ogni orario può coincidere con una partenza
-  // o con un arrivo al capolinea, quindi li confronto tutti e due.
+// Ricerca del turno. Si monta e si smonta SOLO ai capolinea o in rimessa (niente cambi in linea,
+// tranne la 252). La corsa di montata è quella che parte dal capolinea scelto subito dopo l'orario
+// di montata; la smontata è un arrivo (o una partenza) al capolinea dopo la montata, oppure il rientro.
+export function findTurno(line, on, off, cap) {
   const hasOn = !!on, hasOff = !!off;
   if (!hasOn && !hasOff) return [];
   const M = hasOn ? mins(on) : null;
   let S = hasOff ? mins(off) : null;
   if (hasOn && hasOff && S <= M) S += 1440; // smontata dopo mezzanotte
   const L = String(line || '').trim().toLowerCase();
-  const near = (list, T) => {
-    let best = 1e9, trip = null;
-    for (const t of list) for (const x of [mins(t[1]), mins(t[2])]) {
-      const d = Math.abs(x - T);
-      if (d < best) { best = d; trip = t; }
-    }
-    return [best, trip];
-  };
+  const inLinea = L === '252';
+  const rim = cap === 'RIMESSA';
+  const runStart = (trips, i) => i === 0 || mins(trips[i][1]) - mins(trips[i - 1][2]) > 60;
+  const runEnd = (trips, i) => i === trips.length - 1 || mins(trips[i + 1][1]) - mins(trips[i][2]) > 60;
   const out = [];
   for (const [b, trips] of Object.entries(blocksNow())) {
     if (!trips.length) continue;
-    const svc = trips.filter((t) => !isColl(t[3]));
-    if (L && !svc.some((t) => String(t[3]).toLowerCase() === L)) continue;
-    const first = mins(trips[0][1]), last = mins(trips[trips.length - 1][2]);
-    if (hasOn && (first > M + 15 || last < M)) continue; // in giro alla montata
-    if (hasOff && (first > S || last < S - 15)) continue; // in giro alla smontata
-    const cand = L ? trips.filter((t) => isColl(t[3]) || String(t[3]).toLowerCase() === L) : trips;
-    const [dm, tm] = hasOn ? near(cand, M) : [0, null];
-    const [ds, tsm] = hasOff ? near(hasOn ? trips : cand, S) : [0, null];
-    // cambio in linea: la corsa in corso all'ora indicata
-    const inCorso = hasOn ? trips.find((t) => mins(t[1]) < M && mins(t[2]) > M) : null;
-    const inCorsoOff = hasOff ? trips.find((t) => mins(t[1]) < S && mins(t[2]) > S) : null;
-    out.push({ b, score: dm + ds, dm, ds, tm, ts: tsm, inCorso, inCorsoOff, trips });
+    if (L && !trips.some((t) => String(t[3]).toLowerCase() === L)) continue;
+    let dm = 0, tm = null, iM = 0, inCorso = null;
+    if (hasOn) {
+      trips.forEach((t, i) => {
+        const d = mins(t[1]) - M;
+        let ok;
+        if (rim) ok = runStart(trips, i) && d >= 0 && d <= (isColl(t[3]) ? 10 : 60); // presa servizio in rimessa = uscita
+        else ok = !isColl(t[3]) && (!L || String(t[3]).toLowerCase() === L) && (!cap || t[4] === cap) && d >= 0 && d <= 20;
+        if (ok && (tm === null || d < dm)) { dm = d; tm = t; iM = i; }
+      });
+      if (!tm && inLinea) {
+        inCorso = trips.find((t) => mins(t[1]) < M && mins(t[2]) > M);
+        if (inCorso) { tm = inCorso; dm = 10; iM = trips.indexOf(inCorso); }
+      }
+      if (!tm) continue;
+    }
+    let ds = 0, tsm = null;
+    if (hasOff) {
+      let best = 1e9;
+      trips.forEach((t, i) => {
+        if (i < iM) return;
+        const cands = [Math.abs(mins(t[2]) - S)];
+        if (i > iM) cands.push(Math.abs(mins(t[1]) - S)); // smonta al capolinea quando la vettura riparte
+        if (runEnd(trips, i) && !isColl(t[3]) && S >= mins(t[2]) && S - mins(t[2]) <= 60) cands.push(5); // rientro in rimessa senza collegamento
+        const d = Math.min(...cands);
+        if (d < best) { best = d; tsm = t; }
+      });
+      if (best > 15) continue;
+      ds = best;
+    }
+    out.push({ b, score: dm + ds * 1.5, dm, ds, tm, ts: tsm, inCorso, trips });
   }
-  return out.sort((a, b) => a.score - b.score).filter((r, i) => i < 3 && r.score <= 60);
+  return out.sort((a, b) => a.score - b.score).slice(0, 5);
+}
+
+// capolinea da cui parte una linea (per il menu della montata), dal più usato
+function capolineaDi(line) {
+  const L = String(line || '').trim().toLowerCase(), c = {};
+  if (!L) return [];
+  for (const trips of Object.values(blocksNow())) for (const t of trips) if (String(t[3]).toLowerCase() === L) c[t[4]] = (c[t[4]] || 0) + 1;
+  return Object.keys(c).sort((a, b) => c[b] - c[a]);
 }
 
 let turnoTimer = null;
@@ -154,6 +178,7 @@ export async function openTurno(saved) {
     <form id="tuForm" class="tu-form">
       <label>Giorno <select id="tuDay"><option value="">Oggi</option></select></label>
       <label>Linea <input id="tuLine" value="${esc(last.line || '')}" placeholder="es. 913 oppure 80-1" autocomplete="off"></label>
+      <label>Montata a <select id="tuCap"><option value="">qualsiasi capolinea</option></select></label>
       <label>Montata <input id="tuOn" type="time" value="${esc(last.on || '')}"></label>
       <label>Smontata <input id="tuOff" type="time" value="${esc(last.off || '')}"></label>
       <button class="btn" type="submit">Cerca</button>
@@ -166,8 +191,25 @@ export async function openTurno(saved) {
     const sel = document.getElementById('tuDay');
     for (const d of idx.filter((x) => x > todayISO())) sel.insertAdjacentHTML('beforeend', `<option value="${d}"${last.date === d ? ' selected' : ''}>${dayLabel(d)}</option>`);
   } catch (e) { /* solo oggi */ }
+  // menu dei capolinea della linea scritta (si ricorda l'ultimo scelto per ogni linea)
+  const capSel = document.getElementById('tuCap');
+  const fillCap = async () => {
+    const line = document.getElementById('tuLine').value.trim();
+    const d = document.getElementById('tuDay').value;
+    dayBlocks = d && d !== todayISO() ? (await loadDay(d)).blocks || {} : null;
+    const caps = TAB_RE.test(line) ? [] : capolineaDi(line);
+    const pref = (ls('capPerLinea') || {})[line.toLowerCase()] || (last.line === line ? last.cap : '');
+    capSel.innerHTML = '<option value="">qualsiasi capolinea</option><option value="RIMESSA">rimessa (presa servizio in deposito)</option>'
+      + caps.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    capSel.value = [...capSel.options].some((o) => o.value === pref) ? pref : '';
+  };
+  let capT = null;
+  document.getElementById('tuLine').addEventListener('input', () => { clearTimeout(capT); capT = setTimeout(fillCap, 400); });
+  document.getElementById('tuDay').addEventListener('change', fillCap);
+  await fillCap();
   const run = () => {
-    const q = { type: 'turno', date: document.getElementById('tuDay').value, line: document.getElementById('tuLine').value.trim(), on: document.getElementById('tuOn').value, off: document.getElementById('tuOff').value };
+    const q = { type: 'turno', date: document.getElementById('tuDay').value, line: document.getElementById('tuLine').value.trim(), cap: capSel.value, on: document.getElementById('tuOn').value, off: document.getElementById('tuOff').value };
+    if (q.line) { const cp = ls('capPerLinea') || {}; cp[q.line.toLowerCase()] = q.cap; ls('capPerLinea', cp); }
     if (!q.on && !q.off && !TAB_RE.test(q.line)) { C.toast("Scrivi l'orario di montata o di smontata, oppure la tabella (es. 80-1)"); return; }
     ls('turnoUltimo', q);
     renderTurno(q);
@@ -216,7 +258,7 @@ async function renderTurno(q) {
   el.dataset.q = JSON.stringify(q);
   const tm0 = TAB_RE.exec(q.line || '');
   if (tm0) return renderTabella(el, q, tm0);
-  const res = findTurno(q.line, q.on, q.off);
+  const res = findTurno(q.line, q.on, q.off, q.cap);
   const vb = vehiclesByBlock();
   if (!res.length) {
     el.innerHTML = `<p class="sub">Nessuna tabella di ${dayLabel(q.date).toLowerCase()}${q.line ? ' sulla ' + esc(q.line) : ''} corrisponde a ${[q.on && 'montata ' + esc(q.on), q.off && 'smontata ' + esc(q.off)].filter(Boolean).join(' e ')}. Controlla linea e orari${q.line ? ', oppure prova senza linea' : ''}.</p>`;
@@ -226,14 +268,13 @@ async function renderTurno(q) {
   el.innerHTML = (q.date ? `<p class="muted">Tabelle di <b>${esc(dayLabel(q.date))}</b> (le vetture si vedono solo il giorno stesso).</p>` : '') + (res.length > 1 && res[0].score === res[1].score ? '<p class="muted">Più tabelle corrispondono: scegli la tua.</p>' : '') +
     res.map((r, i) => {
       const v = vb.get(r.b);
-      const tm = !q.on ? null : r.dm <= 3 || !r.inCorso ? r.tm : r.inCorso;
-      const mont = !q.on ? '' : r.dm <= 3
-        ? `parte alle <b>${esc(h24(tm[1]))}</b> da ${esc(tm[4])} → ${esc(tm[5])}`
-        : r.inCorso ? `cambio in linea: alle ${esc(q.on)} è sulla corsa ${esc(h24(r.inCorso[1]))} ${esc(r.inCorso[4])} → ${esc(r.inCorso[5])}`
-          : `corsa più vicina: ${esc(h24(tm[1]))} da ${esc(tm[4])}`;
+      const tm = r.tm;
+      const mont = !q.on ? '' : r.inCorso ? `cambio in linea: alle ${esc(q.on)} è sulla corsa ${esc(h24(r.inCorso[1]))} ${esc(r.inCorso[4])} → ${esc(r.inCorso[5])}`
+        : isColl(tm[3]) ? `esci dalla rimessa alle <b>${esc(h24(tm[1]))}</b> (${esc(tm[3])} → ${esc(tm[5])})`
+        : q.cap === 'RIMESSA' ? `esci dalla rimessa, prima corsa alle <b>${esc(h24(tm[1]))}</b> da ${esc(tm[4])}`
+        : `parti alle <b>${esc(h24(tm[1]))}</b> da ${esc(tm[4])} → ${esc(tm[5])}${r.dm ? ` (${r.dm} min dopo la montata)` : ''}`;
       const coll = r.ts && isColl(r.ts[3]);
-      const smont = !r.ts ? '' : r.ds > 3 && r.inCorsoOff ? `cambio in linea: alle ${esc(q.off)} è sulla corsa ${esc(h24(r.inCorsoOff[1]))} ${esc(r.inCorsoOff[4])} → ${esc(r.inCorsoOff[5])}`
-        : coll ? `rientra in deposito (${esc(r.ts[3])}) alle <b>${esc(h24(r.ts[2]))}</b> a ${esc(r.ts[5])}`
+      const smont = !r.ts ? '' : coll ? `rientra in deposito (${esc(r.ts[3])}) alle <b>${esc(h24(r.ts[2]))}</b> a ${esc(r.ts[5])}`
         : Math.abs(mins(r.ts[1]) - mins(q.off)) < Math.abs(mins(r.ts[2]) - mins(q.off))
           ? `smonti al capolinea ${esc(r.ts[4])}: la vettura riparte alle <b>${esc(h24(r.ts[1]))}</b>`
           : `arriva alle <b>${esc(h24(r.ts[2]))}</b> a ${esc(r.ts[5])}`;
@@ -248,7 +289,7 @@ async function renderTurno(q) {
         ${q.off ? `<div>Smontata ${esc(q.off)}: ${smont}</div>` : `<div>Fine tabella: ${esc(h24(r.trips[r.trips.length - 1][2]))}${isColl(r.trips[r.trips.length - 1][3]) ? ' (rientro in deposito)' : ''}</div>`}
         <div class="tu-vline">${vehLine}</div>
         <div class="actions">${v ? `<button class="btn" data-tuveh="${esc(r.b)}">Dov'è adesso</button>` : ''}<button class="btn ghost" data-tutab="${esc(r.b)}" data-trip="${esc((tm || r.ts || r.trips[0])[0])}">Apri tabella</button>
-          ${i === 0 ? favBtn({ type: 'turno', line: q.line, on: q.on, off: q.off }) : ''}</div>
+          ${i === 0 ? favBtn({ type: 'turno', line: q.line, cap: q.cap, on: q.on, off: q.off }) : ''}</div>
       </div>`;
     }).join('') + '<p class="muted">Calcolato sugli orari ATAC di oggi. La vettura compare appena la tabella è in servizio col GPS acceso.</p>';
   el.querySelectorAll('[data-tuveh]').forEach((b) => b.onclick = () => { const v = vb.get(b.dataset.tuveh); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } });

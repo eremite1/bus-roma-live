@@ -37,6 +37,7 @@ export default {
 
     const url = new URL(request.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, '') || 'vehicles';
+    if (name === 'monopattini') return monopattini(ctx, { ...CORS, 'Access-Control-Allow-Origin': request.headers.get('Origin') || '*' });
     if (name === 'nomi') return nomiTabelle(request, env, { ...CORS, 'Access-Control-Allow-Origin': request.headers.get('Origin') || '*' });
     if (name === 'app') return paginaApp(url);
     if (name === 'CarlettiBus.apk' || name === 'BusRomaLive.apk') return scaricaApk(ctx);
@@ -297,4 +298,29 @@ async function nomiTabelle(request, env, cors) {
   db.storia = db.storia.slice(-2000);
   await env.NOMI.put('db', JSON.stringify(db));
   return new Response('{"ok":true}', { headers: h });
+}
+
+
+// ---------- monopattini in sharing (Roma): posizioni dai dati pubblici GBFS degli operatori ----------
+// Lime e Dott a Roma non pubblicano i dati; Bird sì. Per aggiungere altri operatori basta un URL qui.
+const SHARING = [{ op: 'Bird', url: 'https://mds.bird.co/gbfs/v2/public/rome/free_bike_status.json' }];
+async function monopattini(ctx, cors) {
+  const cache = caches.default, key = new Request('https://cache.local/monopattini');
+  const hit = await cache.match(key);
+  if (hit) { const r = new Response(hit.body, hit); for (const [k, v] of Object.entries(cors)) r.headers.set(k, v); return r; }
+  const out = { t: Math.floor(Date.now() / 1000), op: [], v: [] };
+  for (const [i, s] of SHARING.entries()) {
+    try {
+      const j = await (await fetch(s.url, { headers: { 'User-Agent': 'carlettibus' } })).json();
+      out.op.push(s.op);
+      for (const b of (j.data && j.data.bikes) || []) {
+        if (b.is_reserved || b.is_disabled) continue;
+        out.v.push([Math.round(b.lon * 1e5) / 1e5, Math.round(b.lat * 1e5) / 1e5, i, b.current_range_meters ? Math.round(b.current_range_meters / 1000) : null]);
+      }
+    } catch (e) { /* operatore non raggiungibile */ }
+  }
+  const res = new Response(JSON.stringify(out), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' } });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+  return res;
 }
