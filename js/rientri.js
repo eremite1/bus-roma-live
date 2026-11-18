@@ -109,7 +109,7 @@ export function runsOf(trips) {
     if (i >= trips.length) break;
     const before = i > c0 ? trips[i - 1] : null;
     const first = i;
-    while (i + 1 < trips.length && !isColl(trips[i + 1][3]) && mins(trips[i + 1][1]) - mins(trips[i][2]) < 60) i++;
+    while (i + 1 < trips.length && !isColl(trips[i + 1][3]) && mins(trips[i + 1][1]) - mins(trips[i][2]) < 120) i++;
     // collegamenti di rientro: solo quelli attaccati alla fine del servizio. Dopo una pausa lunga
     // (>= 60 min) il collegamento è già l'uscita del turno successivo (es. pausa in rimessa a metà giornata)
     let j = i + 1;
