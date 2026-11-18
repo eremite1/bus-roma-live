@@ -50,7 +50,7 @@ export function rimessaRun(trips, run, R = rim) {
   if (run.before) { out = mins(run.before[1]); outF = 0; }
   else if (tab[run.startPlace]) { out = mins(run.start) - dur(tab[run.startPlace], mins(run.start)); outF = tab[run.startPlace][1]; }
   else { out = mins(run.start); outF = 3; }
-  if (run.after) { inn = mins(trips[run.idx + run.colls][2]); inF = 0; }
+  if (run.after) { inn = mins(trips[run.idx + Math.max(1, run.colls)][2]); inF = 0; }
   else if (tab[run.endPlace]) { inn = mins(run.end) + dur(tab[run.endPlace], mins(run.end)); inF = tab[run.endPlace][1]; }
   else { inn = mins(run.end); inF = 3; }
   return { out, outF, inn, inF, D };
@@ -110,10 +110,12 @@ export function runsOf(trips) {
     const before = i > c0 ? trips[i - 1] : null;
     const first = i;
     while (i + 1 < trips.length && !isColl(trips[i + 1][3]) && mins(trips[i + 1][1]) - mins(trips[i][2]) < 60) i++;
+    // collegamenti di rientro: solo quelli attaccati alla fine del servizio. Dopo una pausa lunga
+    // (>= 60 min) il collegamento è già l'uscita del turno successivo (es. pausa in rimessa a metà giornata)
     let j = i + 1;
-    while (j < trips.length && isColl(trips[j][3])) j++;
+    while (j < trips.length && isColl(trips[j][3]) && mins(trips[j][1]) - mins(trips[j - 1][2]) < 60) j++;
     const after = j > i + 1 ? trips[i + 1] : null;
-    out.push({ first, idx: i, line: trips[i][3], firstLine: trips[first][3], start: trips[first][1], startPlace: trips[first][4],
+    out.push({ first, idx: i, bIdx: before ? first - 1 : -1, line: trips[i][3], firstLine: trips[first][3], start: trips[first][1], startPlace: trips[first][4],
       end: trips[i][2], endPlace: trips[i][5], before, after, colls: j - i - 1 });
     i = j;
   }
@@ -212,6 +214,7 @@ async function render() {
       if (out) {
         state = now < 0 ? 'later' : t < now ? 'done' : 'later';
         if (v && ci >= run.first && ci <= run.idx) { state = 'on'; live = 'in servizio'; }
+        else if (v && run.bIdx >= 0 && ci === run.bIdx) { state = 'on'; live = 'sta uscendo ora'; }
       } else {
         if (v && ci === run.idx) {
           const d = C.delayOf ? C.delayOf(v) : null;
