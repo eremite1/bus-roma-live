@@ -2,16 +2,72 @@
  "_nota": "Tempi veri deposito-capolinea comunicati dagli autisti: deposito -> capolinea -> [minuti, ora in cui sono stati misurati]",
  "G": {
   "Trionfale/Tenuta S. Agata": [
-   25,
+   23,
    16
   ],
   "Staz.ne Prima Porta": [
-   19,
-   0
+   26,
+   19
   ],
   "Dante da Maiano": [
    33,
    6
+  ],
+  "Archimede": [
+   19,
+   5
+  ],
+  "C.so Francia/Vigna Stelluti": [
+   11,
+   15
+  ],
+  "Rossellini": [
+   24,
+   5
+  ],
+  "Antamoro G./Castellani": [
+   27,
+   15
+  ],
+  "Volpi/Farnesina": [
+   17,
+   5
+  ],
+  "Bufalino/Canetti": [
+   30,
+   12
+  ],
+  "S. Giovanni in Argentella": [
+   34,
+   6
+  ],
+  "Lgo Pugliese": [
+   32,
+   21
+  ],
+  "Porta di Roma": [
+   26,
+   21
+  ],
+  "Stazione Saxa Rubra": [
+   11,
+   19
+  ],
+  "L.go Pugliese": [
+   30,
+   14
+  ],
+  "Ospedale S. Filippo Neri (H)": [
+   37,
+   19
+  ],
+  "Bressanone/S.agnese Annibaliano (MB1)": [
+   23,
+   21
+  ],
+  "Monte Sacro": [
+   26,
+   21
   ]
  }
 }
