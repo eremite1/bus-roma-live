@@ -156,8 +156,9 @@ let view = { tab: 'rientri', from: 0, to: 24, line: '', depot: '', place: '', da
 const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 let timer = null;
 
-export async function openRientri() {
-  C.openSheet('<div id="rnView"><div class="spinner">Carico le tabelle di oggi…</div></div>', { type: 'rientri' }, { tall: true });
+export async function openRientri(tab) {
+  if (tab) { view.tab = tab; store('rientriVista2', view); }
+  C.openSheet('<div id="rnView"><div class="spinner">Carico le tabelle di oggi…</div></div>', { type: 'rientri', tab: view.tab }, { tall: true });
   await loadBlocks();
   if (!dayIndex) { try { dayIndex = await (await fetch('data/giorni/indice.json', { cache: 'no-cache' })).json(); } catch (e) { dayIndex = []; } }
   if (view.date && view.date < todayISO()) view.date = '';
@@ -238,8 +239,8 @@ async function render() {
       ${C.badge(r.line, C.colorOf({ line: r.line.split(' ')[0] }))}
       <div class="grow"><div class="title">${out ? 'da' : 'a'} ${esc(place)}</div>
         <div class="muted"><b>${esc(tabName(r.b))}</b> · ${collTxt}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
-        ${r.live ? `<div class="rn-live">● ${esc(r.live)}</div>` : ''}</div>
-      <div class="when">${r.v ? `<span class="rn-car">${esc(r.v.vehicleNo)}</span>` : !out && r.state === 'on' ? '<span class="muted">vettura non vista</span>' : ''}
+        ${r.live ? `<div class="rn-live">● ${esc(r.live)}</div>` : !r.v && r.state === 'on' ? '<div class="muted">vettura non vista</div>' : ''}</div>
+      <div class="when rn-when">${r.v ? `<span class="rn-car">${esc(r.v.vehicleNo)}</span>` : ''}
         <button class="link-btn" data-tab-open>tabella</button></div></li>`;
   };
   const opts = (n, sel) => Array.from({ length: n }, (_, h) => `<option${h === sel ? ' selected' : ''}>${h}</option>`).join('');
@@ -252,10 +253,9 @@ async function render() {
       <div class="muted"><b>${esc(g.name)}</b> · ${g.tipo === 'recupero' ? 'da recuperare' : 'in sosta, ha ancora servizio'} · spenta da ${min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min'}${g.dep ? ' · ' + esc(depotName(g.dep)) : ''}</div></div>
       <div class="when"><span class="rn-car">${esc(v.vehicleNo)}</span></div></li>`;
   };
-  const tabs = `<div class="dir-tabs">
-      <button class="dir-tab${!out && !rec ? ' on' : ''}" data-tab="rientri"><b>Rientri</b></button>
-      <button class="dir-tab${out ? ' on' : ''}" data-tab="uscite"><b>Uscite</b></button>
-      <button class="dir-tab${rec ? ' on' : ''}" data-tab="recupero"><b>Ferme${ghosts.length ? ' (' + ghosts.length + ')' : ''}</b></button>
+  const tabs = out ? '<h2>🚌 Uscite dalla rimessa</h2>' : `<h2>🏠 Rientri in rimessa</h2><div class="dir-tabs">
+      <button class="dir-tab${!rec ? ' on' : ''}" data-tab="rientri"><b>Rientri</b></button>
+      <button class="dir-tab${rec ? ' on' : ''}" data-tab="recupero"><b>Vetture ferme${ghosts.length ? ' (' + ghosts.length + ')' : ''}</b></button>
     </div>`;
   if (rec) {
     ghosts.sort((a, b) => (a.ghost.tipo === b.ghost.tipo ? mins(a.ghost.rientro) - mins(b.ghost.rientro) : a.ghost.tipo === 'recupero' ? -1 : 1));
@@ -269,8 +269,12 @@ async function render() {
     });
     return;
   }
+  const inServ = out ? rows.filter((r) => r.state === 'done' && mins(r.run.end) > now) : rows.filter((r) => r.state === 'on');
+  const found = inServ.filter((r) => r.v).length;
+  const stat = day.today && inServ.length ? `<p class="rn-stat">Vetture individuate: <b>${found} su ${inServ.length}</b> (${Math.round((100 * found) / inServ.length)}%) tra quelle ${out ? 'uscite e ancora in servizio' : 'ancora in servizio'}</p>` : '';
   el.innerHTML = `
     ${tabs}
+    ${stat}
     <p class="sub"><b>${dayLabel(view.date)}</b> · ${out ? 'Uscite dalla rimessa' : 'Rientri in rimessa'} ${view.from === 0 && view.to === 24 ? 'di tutta la giornata' : `tra le ${view.from} e le ${view.to}`}${view.line ? `, linea ${esc(view.line)}` : ''}${view.depot ? ', ' + esc(depotName(view.depot)) : ''}: ${pending.length} ${out ? 'ancora da uscire o in corso' : 'ancora da rientrare'}.</p>
     <form id="rnForm" class="rn-form">
       <select id="rnDate">${[todayISO(), ...(dayIndex || []).filter((d) => d > todayISO())].map((d) => `<option value="${d === todayISO() ? '' : d}"${(view.date || '') === (d === todayISO() ? '' : d) ? ' selected' : ''}>${dayLabel(d)}</option>`).join('')}</select>

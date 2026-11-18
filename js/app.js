@@ -1662,7 +1662,8 @@ $('navChip').onclick = () => { hideSuggest(); openNavPicker(); };
 }
 $('turnoChip').onclick = () => { hideSuggest(); openTurno(); };
 $('prefChip').onclick = () => { hideSuggest(); openPreferiti(); };
-$('rientriChip').onclick = () => { hideSuggest(); openRientri(); };
+$('rientriChip').onclick = () => { hideSuggest(); openRientri(state.view?.type === 'rientri' && state.view.tab === 'recupero' ? 'recupero' : 'rientri'); };
+$('usciteChip').onclick = () => { hideSuggest(); openRientri('uscite'); };
 initStorico({ openSheet });
 initLimitata({ map, store, loadShapes, loadLineStops, openSheet, sheetBody, fitTo, PROXY, traffic: state.traffic });
 
