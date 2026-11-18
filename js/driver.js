@@ -15,7 +15,8 @@ export function initDriver(ctx) { C = ctx; }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const BUNCH_M = 350;        // sotto questa distanza dal bus davanti/dietro scatta l'avviso
-const DEFAULT_KMH = 15;     // velocità media di un bus in città, per stimare i minuti di distacco
+const DEFAULT_KMH = 15;
+const GIRO_PERSO_MIN = 15;  // se arrivi a meno di 15 min dalla partenza del giro dopo, il giro intermedio si perde     // velocità media di un bus in città, per stimare i minuti di distacco
 
 let D = null; // stato della modalità autista
 
@@ -195,7 +196,10 @@ export async function update() {
   const avgKmh = tr && tr.avg ? tr.avg : DEFAULT_KMH;
   const T = tabInfo(me, delay);
   const head = T ? T.headway : null;
-  const gapMin = (o) => (o ? minutes(Math.abs(o.at - myAt), avgKmh) : null);
+  // distacco in minuti come il SIG: il tempo che secondo la TUA tabella impieghi a coprire quella distanza
+  // (velocità programmata della corsa = lunghezza del percorso / durata in orario)
+  const schedKmh = T && D.route && T.dur > 5 ? Math.min(40, Math.max(6, (D.route.total / 1000) / (T.dur / 60))) : avgKmh;
+  const gapMin = (o) => (o ? minutes(Math.abs(o.at - myAt), schedKmh) : null);
   const ga = gapMin(ahead), gb = gapMin(behind);
   if (delay != null) D.hist.push(delay);
   if (D.hist.length > 6) D.hist.shift();
@@ -214,7 +218,8 @@ export async function update() {
     if (ga < head * 0.4 && gb > head * 1.4) tip = `Troppo vicino a quello davanti (${ga} min): rallenta`;
     else if (gb < head * 0.4 && ga > head * 1.4) tip = `Quello dietro ti sta raggiungendo (${gb} min): sei staccato da quello davanti`;
   } else if (ga != null && ahead.at - myAt < BUNCH_M) tip = 'Sei attaccato alla vettura davanti';
-  if (T && T.sosta != null && T.sosta < 0) tip = tip || `Arriverai al capolinea dopo l'orario di ripartenza (${-T.sosta} min)`;
+  if (T && T.perso) tip = `Giro perso: arrivi al capolinea verso le ${T.endEst}, riparti alle ${T.perso}`;
+  else if (T && T.sosta != null && T.sosta < 0) tip = tip || `Arriverai al capolinea dopo l'orario di ripartenza (${-T.sosta} min)`;
 
   // striscia regolarità: dietro — io — davanti
   const seg = (m) => `<i class="cz-seg ${m == null ? 'none' : head && m < head * 0.4 ? 'tight' : head && m > head * 1.6 ? 'wide' : ''}" style="flex-grow:${m == null ? 1 : Math.max(1, Math.min(m, 40))}"></i>`;
@@ -293,13 +298,26 @@ function tabInfo(me, delay) {
   const cur = trips[ci], d = delay || 0;
   const endEst = tm(cur[2]) + d;
   const nx = trips[ci + 1];
-  let nextKind, nextAt, nextTxt, sosta = null;
+  let nextKind, nextAt, nextTxt, sosta = null, perso = null;
   if (!nx) { nextKind = 'Poi'; nextAt = '—'; nextTxt = 'ultima corsa della tabella'; }
   else if (isColl(nx[3])) { nextKind = 'Rientro'; nextAt = hm(tm(nx[2])); nextTxt = `${nx[3]} → ${nx[5]}`; }
   else {
     sosta = tm(nx[1]) - endEst;
     nextKind = 'Ripartenza'; nextAt = nx[1];
     nextTxt = (nx[3] !== cur[3] ? `linea ${nx[3]} · ` : '') + (sosta >= 0 ? `sosta ~${sosta} min` : `in ritardo di ${-sosta} min`);
+    // GIRO PERSO: se con il ritardo arrivi a meno di 15 minuti dalla partenza del giro successivo
+    // (stesso capolinea: 1 corsa dopo sulle circolari, 2 corse dopo sulle altre), quel giro si salta
+    if (sosta < 0) {
+      for (let k = ci + 2; k < trips.length && !isColl(trips[k][3]); k++) {
+        if (trips[k][4] !== cur[5]) continue;
+        if (endEst >= tm(trips[k][1]) - GIRO_PERSO_MIN) {
+          perso = trips[k][1]; nextKind = 'Giro perso'; nextAt = trips[k][1];
+          nextTxt = `salti ${k - ci - 1 === 1 ? 'la corsa' : 'le corse'} delle ${nx[1]}`;
+          sosta = tm(trips[k][1]) - endEst;
+        }
+        break;
+      }
+    }
   }
   const run = runsOf(trips).find((r) => ci >= r.first && ci <= r.idx + r.colls) || null;
   let runEnd = '—', rientro = '—';
@@ -312,7 +330,7 @@ function tabInfo(me, delay) {
   const headway = dif.length ? dif[Math.floor(dif.length / 2)] : null;
   const nm = tabName(b);
   return { name: nm && nm.includes('/') ? nm : nm || b.split('#')[1], n, tot: svc.length, end: hm(tm(cur[2])), endEst: hm(endEst), endPlace: cur[5],
-    nextKind, nextAt, nextTxt, sosta, runEnd: runEnd === '—' ? '—' : hm(tm(runEnd)), rientro, headway };
+    nextKind, nextAt, nextTxt, sosta, perso, dur: tm(cur[2]) - tm(cur[1]), runEnd: runEnd === '—' ? '—' : hm(tm(runEnd)), rientro, headway };
 }
 
 let wakeLock = null;
