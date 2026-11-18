@@ -19,14 +19,16 @@ const DEFAULT_KMH = 15;     // velocità media di un bus in città, per stimare 
 let D = null; // stato della modalità autista
 
 const saved = () => { try { return localStorage.getItem('vettura') || ''; } catch (e) { return ''; } };
+const forget = () => { try { localStorage.removeItem('vettura'); } catch (e) { /* ok */ } };
 
 export function openDriver() {
   C.openSheet(`
     <h2>Modalità autista</h2>
     <p class="sub">Scrivi il numero della vettura che stai guidando: ti seguo sulla mappa e ti avviso (vibrazione e voce) su distacchi, ritardo e traffico.</p>
-    <form id="drvForm" class="dev-field">Vettura <input id="drvNo" value="${esc(saved())}" inputmode="numeric" placeholder="es. 4512" autocomplete="off"><button class="btn" type="submit">Inizia</button></form>
+    <form id="drvForm" class="dev-field">Vettura <input id="drvNo" value="${esc(saved())}" inputmode="numeric" placeholder="es. 4512" autocomplete="off"><button class="btn ghost" type="button" id="drvClear" aria-label="Cancella il numero">✕</button><button class="btn" type="submit">Inizia</button></form>
     <p class="muted">Funziona con i GPS reali ATAC. Usa il telefono solo su un supporto fisso.</p>
   `, { type: 'driverpick' });
+  document.getElementById('drvClear').onclick = () => { forget(); const i = document.getElementById('drvNo'); i.value = ''; i.focus(); };
   document.getElementById('drvForm').onsubmit = (e) => {
     e.preventDefault();
     const no = document.getElementById('drvNo').value.trim();
@@ -147,7 +149,7 @@ export async function update() {
       <p class="sub">Non la trovo ancora nei dati GPS di ATAC. Se hai appena acceso il mezzo può volerci un paio di minuti; controlla anche il numero.</p>
       <div class="actions"><button class="btn ghost" id="drvStop">Esci</button></div>`;
     const b = document.getElementById('drvStop');
-    if (b) b.onclick = () => { stopDriver(); C.closeSheet(); };
+    if (b) b.onclick = () => { stopDriver(); forget(); C.closeSheet(); };
     return;
   }
   D.id = me.id;
@@ -220,7 +222,7 @@ export async function update() {
     </div>`;
   document.getElementById('drvMute').onclick = () => { setMuted(!isMuted()); update(); };
   document.getElementById('drvCenter').onclick = () => { D.follow = true; update(); };
-  document.getElementById('drvStop').onclick = () => { stopDriver(); C.closeSheet(); };
+  document.getElementById('drvStop').onclick = () => { stopDriver(); forget(); C.closeSheet(); };
   document.getElementById('drvLim').onclick = () => C.openLimitata({ line: me.line, dir: D.dir, pos: [me.lng, me.lat] });
   if (D.follow) C.showPoint([me.lng, me.lat], 15.5);
 }
