@@ -1,0 +1,34 @@
+name: Carica la beta per tutti
+
+# Si avvia a mano (pulsante "Carica" nell'app -> Run workflow):
+# la versione beta diventa quella pubblica, per la mappa e per l'app.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  carica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Mappa - la beta diventa pubblica
+        run: git push -f origin HEAD:refs/heads/stabile
+      - name: App - l'ultima versione beta diventa quella pubblica
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --limit 30 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease)] | sort_by(.tagName | ltrimstr("v") | tonumber) | last | .tagName')
+          if [ -n "$TAG" ] && [ "$TAG" != "null" ]; then
+            NOME=$(gh release view "$TAG" --json name --jq .name | sed 's/ beta$//')
+            gh release edit "$TAG" --prerelease=false --latest --title "$NOME"
+            echo "App pubblicata: $NOME"
+          fi
+      - name: Ripubblica il sito
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pubblica.yml --ref main

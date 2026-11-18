@@ -455,3 +455,5 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .tb-hrow { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
 .tb-hrow .early { color: #2563EB; font-weight: 600; }
 .tb-hrow .ontime { color: #0B7A3E; font-weight: 600; }
+
+.beta-tag { position: fixed; left: 8px; bottom: 8px; z-index: 50; background: #F2B33D; color: #1B1D22; font-weight: 800; font-size: 11px; padding: 2px 7px; border-radius: 6px; pointer-events: none; }

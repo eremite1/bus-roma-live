@@ -94,7 +94,7 @@ class MainActivity : Activity() {
             }
         }
         // se Android aveva chiuso l'app in background, la mappa riapre quello che era aperto (?r=1)
-        web.loadUrl(if (savedInstanceState != null) "$URL_MAPPA?r=1" else URL_MAPPA)
+        web.loadUrl(Canale.url(this) + if (savedInstanceState != null) "?r=1" else "")
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         // benvenuto a ogni apertura
@@ -237,6 +237,12 @@ class MainActivity : Activity() {
         @JavascriptInterface fun isAdmin(): Boolean = Accesso.isAdmin(this@MainActivity)
         @JavascriptInterface fun genCode(tel: String): String = if (Accesso.isAdmin(this@MainActivity)) Accesso.codicePer(tel) else ""
         @JavascriptInterface fun phoneCode(): String = Accesso.codiceTelefono(this@MainActivity)
+        @JavascriptInterface fun isBeta(): Boolean = Canale.beta(this@MainActivity)
+        @JavascriptInterface fun setBeta(on: Boolean) {
+            if (!Accesso.isAdmin(this@MainActivity)) return
+            Canale.setBeta(this@MainActivity, on)
+            runOnUiThread { web.loadUrl(Canale.url(this@MainActivity)); Updater.check(this@MainActivity, quiet = true) }
+        }
         @JavascriptInterface fun checkUpdate() { runOnUiThread { Updater.check(this@MainActivity, quiet = false) } }
     }
 

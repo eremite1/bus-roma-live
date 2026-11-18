@@ -70,13 +70,19 @@ jobs:
 
       - name: Prepara il sito
         run: |
-          mkdir -p _site
-          cp -r index.html config.js css js data _site/
-          # versione nei nomi dei file: telefoni e browser scaricano subito il codice nuovo
-          V=${GITHUB_SHA::8}
-          sed -i -E "s#(src|href)=\"(js|css)/([^\"?]+)\"#\1=\"\2/\3?v=$V\"#g" _site/index.html
-          sed -i -E "s#from '\./([^'?]+\.js)'#from './\1?v=$V'#g; s#import\('\./([^'?]+\.js)'\)#import('./\1?v=$V')#g" _site/js/*.js
-          [ -f favicon.svg ] && cp favicon.svg _site/ || true
+          # BETA = ultimo codice (ramo main), in /beta/ ; PUBBLICA = ramo "stabile", nella pagina principale
+          mkdir -p _site/beta
+          cp -r index.html config.js css js data _site/beta/
+          git fetch -q origin stabile && git worktree add -f stabile origin/stabile
+          cp -r stabile/index.html stabile/config.js stabile/css stabile/js _site/
+          cp -r data _site/
+          for D in _site _site/beta; do
+            V=$( [ "$D" = _site ] && git -C stabile rev-parse --short=8 HEAD || echo ${GITHUB_SHA::8} )
+            # versione nei nomi dei file: telefoni e browser scaricano subito il codice nuovo
+            sed -i -E "s#(src|href)=\"(js|css)/([^\"?]+)\"#\1=\"\2/\3?v=$V\"#g" $D/index.html
+            sed -i -E "s#from '\./([^'?]+\.js)'#from './\1?v=$V'#g; s#import\('\./([^'?]+\.js)'\)#import('./\1?v=$V')#g" $D/js/*.js
+          done
+          [ -f favicon.svg ] && cp favicon.svg _site/ && cp favicon.svg _site/beta/ || true
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

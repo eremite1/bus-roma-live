@@ -19,6 +19,8 @@ import java.net.URL
 /** Controlla su GitHub se c'è una versione nuova dell'app, la scarica e la installa. */
 object Updater {
     private const val API = "https://api.github.com/repos/eremite1/bus-roma-live/releases/latest"
+    // canale beta (solo amministratore): anche le versioni di prova, non ancora caricate per tutti
+    private const val API_BETA = "https://api.github.com/repos/eremite1/bus-roma-live/releases?per_page=10"
 
     data class Info(val code: Int, val name: String, val url: String, val notes: String)
 
@@ -31,7 +33,7 @@ object Updater {
     /** quiet = all'apertura: nessun messaggio se è tutto aggiornato o se manca la rete. */
     fun check(act: Activity, quiet: Boolean) {
         Thread {
-            val info = try { fetch() } catch (e: Exception) {
+            val info = try { fetch(Canale.beta(act)) } catch (e: Exception) {
                 if (!quiet) act.runOnUiThread { Toast.makeText(act, "Impossibile controllare: ${e.message ?: "nessuna connessione"}", Toast.LENGTH_LONG).show() }
                 return@Thread
             }
@@ -43,14 +45,17 @@ object Updater {
         }.start()
     }
 
-    private fun fetch(): Info? {
-        val c = URL(API).openConnection() as HttpURLConnection
+    private fun fetch(beta: Boolean): Info? {
+        val c = URL(if (beta) API_BETA else API).openConnection() as HttpURLConnection
         c.setRequestProperty("Accept", "application/vnd.github+json")
         c.setRequestProperty("User-Agent", "BusRomaLive")
         c.connectTimeout = 10_000; c.readTimeout = 15_000
         try {
             if (c.responseCode != 200) throw Exception("errore ${c.responseCode}")
-            val j = JSONObject(c.inputStream.bufferedReader().readText())
+            val txt = c.inputStream.bufferedReader().readText()
+            val j = if (beta) (org.json.JSONArray(txt).let { a ->
+                (0 until a.length()).map { a.getJSONObject(it) }.maxByOrNull { it.optString("tag_name").removePrefix("v").toIntOrNull() ?: 0 }
+            } ?: return null) else JSONObject(txt)
             val code = j.optString("tag_name").removePrefix("v").toIntOrNull() ?: return null
             val assets = j.optJSONArray("assets") ?: return null
             var url: String? = null

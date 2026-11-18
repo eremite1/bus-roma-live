@@ -1443,6 +1443,13 @@ $('infoBtn').onclick = () => {
     <p><b>Mappa:</b> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>.</p>
     ${window.Android && Android.appVersion ? `<div class="section-title">App</div><p>Versione <b>${esc(Android.appVersion())}</b></p>
       <div class="actions" style="margin-top:0"><button class="btn" id="appUpd">Controlla aggiornamenti</button></div>` : ''}
+    ${window.Android && Android.isAdmin && Android.isAdmin() && Android.setBeta ? `<div class="section-title">Versione (amministratore)</div>
+      <p>Stai usando la versione <b>${Android.isBeta() ? 'BETA (di prova)' : 'pubblica'}</b>.</p>
+      <div class="actions" style="margin-top:0">
+        <button class="btn ghost" id="betaSw">${Android.isBeta() ? 'Passa alla pubblica' : 'Passa alla beta'}</button>
+        <button class="btn" id="betaUp">⬆ Carica la beta per tutti</button>
+      </div>
+      <p class="muted">"Carica" apre GitHub: tocca <b>Run workflow</b> e poi di nuovo <b>Run workflow</b>. In pochi minuti la beta diventa la versione pubblica e gli altri ricevono l'aggiornamento.</p>` : ''}
     ${window.Android && Android.isAdmin && Android.isAdmin() ? `<div class="section-title">Codici di accesso (amministratore)</div>
       <p class="muted">Incolla il messaggio WhatsApp ricevuto (o solo il codice telefono): ottieni il codice di accesso valido solo per quel telefono.</p>
       <form class="pf-add" id="genForm"><input id="genTel" placeholder="Incolla qui il messaggio" autocomplete="off"><button class="btn" type="submit">Genera</button></form>
@@ -1451,6 +1458,10 @@ $('infoBtn').onclick = () => {
   </div>`, { type: 'info' });
   const u = document.getElementById('appUpd');
   if (u) u.onclick = () => Android.checkUpdate();
+  const bs = document.getElementById('betaSw');
+  if (bs) bs.onclick = () => Android.setBeta(!Android.isBeta());
+  const bu = document.getElementById('betaUp');
+  if (bu) bu.onclick = () => { location.href = 'https://github.com/eremite1/bus-roma-live/actions/workflows/rilascio.yml'; };
   const g = document.getElementById('genForm');
   if (g) g.onsubmit = (e) => {
     e.preventDefault();
@@ -1689,6 +1700,7 @@ map.on('load', async () => {
   loadTrips().then(() => { if (state.source) refreshVehicles(); });
   refreshStops();
   restoreUi();
+  if (/\/beta\//.test(location.pathname)) document.body.insertAdjacentHTML('beforeend', '<div class="beta-tag">BETA</div>');
   // se il permesso di posizione è già stato dato in passato, mostro subito il pallino blu
   try {
     const perm = await navigator.permissions.query({ name: 'geolocation' });
