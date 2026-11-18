@@ -1470,6 +1470,8 @@ $('infoBtn').onclick = () => {
         <button class="btn ghost" id="betaSw">${Android.isBeta() ? 'Passa alla pubblica' : 'Passa alla beta'}</button>
         <button class="btn" id="betaUp">⬆ Carica la beta per tutti</button>
       </div>
+      <div class="section-title" style="margin-top:6px">Novità in beta non ancora pubbliche</div>
+      <ul id="betaNews" class="beta-news"><li class="muted">Carico l'elenco…</li></ul>
       <p class="muted">"Carica" apre GitHub: tocca <b>Run workflow</b> e poi di nuovo <b>Run workflow</b>. In pochi minuti la beta diventa la versione pubblica e gli altri ricevono l'aggiornamento.</p>` : ''}
     ${window.Android && Android.isAdmin && Android.isAdmin() ? `<div class="section-title">Codici di accesso (amministratore)</div>
       <p class="muted">Incolla il messaggio WhatsApp ricevuto (o solo il codice telefono): ottieni il codice di accesso valido solo per quel telefono.</p>
@@ -1479,6 +1481,17 @@ $('infoBtn').onclick = () => {
   </div>`, { type: 'info' });
   const u = document.getElementById('appUpd');
   if (u) u.onclick = () => Android.checkUpdate();
+  const bn = document.getElementById('betaNews');
+  if (bn) {
+    // differenze tra la versione pubblica (ramo "stabile") e la beta (ramo "main"); i dati vanno già a tutti
+    fetch('https://api.github.com/repos/eremite1/bus-roma-live/compare/stabile...main').then((r) => r.json()).then((c) => {
+      const DATI = /^(Dati|Nome tabell|Nomi tabell|Altre tabelle|Dallo storico|Tempi veri|Prova)/i;
+      const list = (c.commits || []).filter((x) => !/\[bot\]/.test((x.author && x.author.login) || x.commit.author.name) && !DATI.test(x.commit.message))
+        .map((x) => ({ m: x.commit.message.split('\n')[0], d: new Date(x.commit.author.date) })).reverse();
+      bn.innerHTML = list.length ? list.map((x) => `<li><span class="muted">${x.d.getDate()}/${x.d.getMonth() + 1}</span> ${esc(x.m)}</li>`).join('')
+        : '<li class="muted">Nessuna novità: la pubblica è uguale alla beta.</li>';
+    }).catch(() => { bn.innerHTML = '<li class="muted">Elenco non disponibile ora.</li>'; });
+  }
   const bs = document.getElementById('betaSw');
   if (bs) bs.onclick = () => Android.setBeta(!Android.isBeta());
   const bu = document.getElementById('betaUp');
