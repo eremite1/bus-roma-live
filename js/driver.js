@@ -147,7 +147,7 @@ export async function update() {
       <p class="sub">Non la trovo ancora nei dati GPS di ATAC. Se hai appena acceso il mezzo può volerci un paio di minuti; controlla anche il numero.</p>
       <div class="actions"><button class="btn ghost" id="drvStop">Esci</button></div>`;
     const b = document.getElementById('drvStop');
-    if (b) b.onclick = () => C.closeSheet();
+    if (b) b.onclick = () => { stopDriver(); C.closeSheet(); };
     return;
   }
   D.id = me.id;
@@ -220,7 +220,7 @@ export async function update() {
     </div>`;
   document.getElementById('drvMute').onclick = () => { setMuted(!isMuted()); update(); };
   document.getElementById('drvCenter').onclick = () => { D.follow = true; update(); };
-  document.getElementById('drvStop').onclick = () => C.closeSheet();
+  document.getElementById('drvStop').onclick = () => { stopDriver(); C.closeSheet(); };
   document.getElementById('drvLim').onclick = () => C.openLimitata({ line: me.line, dir: D.dir, pos: [me.lng, me.lat] });
   if (D.follow) C.showPoint([me.lng, me.lat], 15.5);
 }
