@@ -30,16 +30,16 @@ function toggle(f) {
   ls('preferiti', l);
   return isFav(f);
 }
-const label = (on) => on ? '★ Nei preferiti' : '☆ Aggiungi ai preferiti';
-export function favBtn(f) {
-  return `<button class="btn ghost fav-btn${isFav(f) ? ' on' : ''}" data-fav="${esc(JSON.stringify(f))}">${label(isFav(f))}</button>`;
+const label = (on, what) => (on ? '★ ' : '☆ ') + (what ? (on ? what + ' nei preferiti' : what) : on ? 'Nei preferiti' : 'Aggiungi ai preferiti');
+export function favBtn(f, what = '') {
+  return `<button class="btn ghost fav-btn${isFav(f) ? ' on' : ''}" data-fav="${esc(JSON.stringify(f))}" data-what="${esc(what)}">${label(isFav(f), what)}</button>`;
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('[data-fav]');
   if (!b) return;
   const on = toggle(JSON.parse(b.dataset.fav));
   b.classList.toggle('on', on);
-  b.textContent = label(on);
+  b.textContent = label(on, b.dataset.what || '');
   C && C.toast && C.toast(on ? 'Aggiunto ai preferiti' : 'Tolto dai preferiti');
 });
 
@@ -62,7 +62,13 @@ export async function openPreferiti() {
 }
 
 // Nei preferiti solo tabelle e turni: per ognuno mostro tutto (vettura, dove si trova, corsa in corso).
-const prefOk = (f) => f.type === 'tabella' || f.type === 'turno';
+const prefOk = (f) => f.type === 'tabella' || f.type === 'turno' || f.type === 'vettura';
+// vettura di una tabella: in servizio oppure spenta (ferma fuori deposito)
+const vehOfBlock = (b, vb) => vb.get(b) || [...C.state.shown.values()].map((x) => x.v).find((v) => v.spento && v.ghost && v.ghost.b === b) || null;
+const vehByNo = (no) => [...C.state.shown.values()].map((x) => x.v).find((v) => v.source === 'gps' && sameNo(v.vehicleNo, no)) || null;
+const vehLine = (v) => v.spento
+  ? `<b class="tu-veh">Vettura ${esc(v.vehicleNo)}</b> · <span class="late">spenta da ${Math.round((Date.now() / 1000 - v.ts) / 60)} min</span>${v.ghost && v.ghost.missed ? ' · doveva ripartire alle ' + esc(v.ghost.missed) : ''}`
+  : `<b class="tu-veh">Vettura ${esc(v.vehicleNo)}</b> · ${esc(v.line)}${v.headsign ? ' verso ' + esc(v.headsign) : ''}`;
 function resolveFav(f) {
   if (f.type === 'tabella') return findBlock(f);
   const tmm = TAB_RE.exec(f.line || '');
@@ -80,7 +86,15 @@ function renderPref() {
   const nowT = (t) => { const s = mins(t[1]), e = mins(t[2]); return (s <= nowM && e >= nowM) || (s <= nowM + 1440 && e >= nowM + 1440); };
   const cards = favs.map((f) => {
     const i = all.indexOf(f);
-    const b = resolveFav(f), trips = b && bl[b], v = b && vb.get(b);
+    if (f.type === 'vettura') {
+      const v = vehByNo(f.no);
+      const vb2 = v && v.tripId ? (v.tripId.includes('#') ? v.tripId.slice(0, v.tripId.lastIndexOf('-')) : '') : '';
+      return `<div class="tu-card"><div class="tu-head"><b>🚌 Vettura ${esc(f.no)}</b><button class="pf-del" data-del="${i}" aria-label="Togli dai preferiti">✕</button></div>
+        ${v ? `<div class="tu-vline">${vehLine(v)}</div>${vb2 && bl[vb2] ? `<div>Tabella <b>${esc(tabName(vb2))}</b></div>` : ''}
+          <div class="actions"><button class="btn" data-vid="${esc(v.id)}">Dov'è adesso</button>${vb2 && bl[vb2] ? `<button class="btn ghost" data-tab="${esc(vb2)}">Apri tabella</button>` : ''}</div>`
+          : '<div class="muted">Ora non è in servizio (o non trasmette).</div>'}</div>`;
+    }
+    const b = resolveFav(f), trips = b && bl[b], v = b && vehOfBlock(b, vb);
     const title = f.type === 'turno'
       ? `🕑 Turno ${esc(f.line || '')} ${esc(f.on || '')}${f.off ? '–' + esc(f.off) : ''}`
       : `📋 ${esc(b ? tabName(b) : f.label || 'Tabella')}`;
@@ -90,19 +104,19 @@ function renderPref() {
       const cur = trips.find(nowT), next = trips.find((t) => mins(t[1]) > nowM);
       const lines = [...new Set(trips.map((t) => t[3]).filter((l) => !isColl(l)))].join(' › ');
       body = `<div><b>${esc(tabName(b))}</b> · ${esc(lines)} · uscita ${esc(h24(trips[0][1]))}, rientro ${esc(h24(trips[trips.length - 1][2]))}</div>
-        <div class="tu-vline">${v ? `<b class="tu-veh">Vettura ${esc(v.vehicleNo)}</b>${v.headsign ? ' · verso ' + esc(v.headsign) : ''}` : (mins(trips[0][1]) > nowM ? `Vettura non ancora uscita (esce alle ${esc(h24(trips[0][1]))})` : 'Vettura non visibile ora (GPS spento o fuori servizio)')}</div>
+        <div class="tu-vline">${v ? vehLine(v) : (mins(trips[0][1]) > nowM ? `Vettura non ancora uscita (esce alle ${esc(h24(trips[0][1]))})` : 'Vettura non visibile ora (GPS spento o fuori servizio)')}</div>
         ${cur ? `<div>Ora: ${esc(isColl(cur[3]) ? 'collegamento ' + cur[3] : 'corsa ' + h24(cur[1]))} ${esc(cur[4])} → ${esc(cur[5])} (arrivo ${esc(h24(cur[2]))})</div>` : next ? `<div>Prossima: ${esc(h24(next[1]))} da ${esc(next[4])}</div>` : '<div class="muted">Servizio di oggi finito.</div>'}
-        <div class="actions">${v ? `<button class="btn" data-veh="${esc(b)}">Dov'è adesso</button>` : ''}<button class="btn ghost" data-tab="${esc(b)}">Apri tabella</button></div>`;
+        <div class="actions">${v ? `<button class="btn" data-vid="${esc(v.id)}">Dov'è adesso</button>` : ''}<button class="btn ghost" data-tab="${esc(b)}">Apri tabella</button></div>`;
     }
     return `<div class="tu-card"><div class="tu-head"><b>${title}</b><button class="pf-del" data-del="${i}" aria-label="Togli dai preferiti">✕</button></div>${body}</div>`;
   }).join('');
   el.innerHTML = `<h2>★ Preferiti</h2>
-    ${cards || `<p class="sub">Nessun preferito. Apri una tabella (o cerca il tuo turno) e tocca <b>☆ Aggiungi ai preferiti</b>: qui vedrai vettura, posizione e corsa in corso.</p>`}
+    ${cards || `<p class="sub">Nessun preferito. Tocca ☆ nella scheda di una vettura, di una tabella o nel risultato del tuo turno: qui vedrai vettura, posizione e corsa in corso.</p>`}
     <div class="actions"><button class="btn" id="pfTurno">🕑 Trova il mio turno</button></div>
     <p class="muted">Salvati su questo telefono. Aggiornamento ogni 30 secondi.</p>`;
   document.getElementById('pfTurno').onclick = () => openTurno();
   el.querySelectorAll('[data-del]').forEach((x) => x.onclick = () => { const l = list(); l.splice(+x.dataset.del, 1); ls('preferiti', l); renderPref(); });
-  el.querySelectorAll('[data-veh]').forEach((x) => x.onclick = () => { const v = vb.get(x.dataset.veh); if (v) { C.showVehicle(v); C.showPoint([v.lng, v.lat], 15.5); } });
+  el.querySelectorAll('[data-vid]').forEach((x) => x.onclick = () => { const s = C.state.shown.get(x.dataset.vid); if (s) { C.showVehicle(s.v); C.showPoint([s.v.lng, s.v.lat], 16); } else C.toast('La vettura non è più visibile'); });
   el.querySelectorAll('[data-tab]').forEach((x) => x.onclick = () => openTabella(x.dataset.tab));
 }
 

@@ -11,7 +11,7 @@ import { initStorico, openStorico } from './storico.js';
 import { initFoto, openFoto } from './foto.js';
 import { initMonopattini, toggleScooters, scooterState, scooterOption } from './monopattini.js';
 import { initPreferiti, openPreferiti, openTurno, favBtn } from './preferiti.js';
-import { initRientri, ghostInfo, loadBlocks as loadBlocksR, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf } from './rientri.js';
+import { initRientri, ghostInfo, loadBlocks as loadBlocksR, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf, tripsOf as tripsOfR, nameKey as nameKeyR, tabName as tabNameR } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
 import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
 
@@ -601,6 +601,8 @@ function showVehicle(v) {
     <div class="facts" id="vehTab"></div>
     <div class="actions">
       <button class="btn ghost" id="showLineBtn">${ICON.bus} Tutta la linea ${esc(v.line)}</button>
+      ${v.source === 'gps' && v.vehicleNo ? favBtn({ type: 'vettura', no: String(v.vehicleNo) }, 'Vettura ' + v.vehicleNo) : ''}
+      ${favTab(v)}
     </div>
     <div class="section-title">Fermate della corsa</div>
     <div id="tripStops"><div class="spinner">Carico gli orari…</div></div>
@@ -1298,6 +1300,14 @@ function renderPlanList() {
   const pts = [state.from.lngLat, state.to.lngLat];
   drawPlan(null);
   fitTo(pts);
+}
+
+// preferito "tabella" dalla scheda della vettura (la tabella resta la stessa anche se domani cambia vettura)
+function favTab(v) {
+  const b = blockOf(v.tripId);
+  const tr = b && tripsOfR(b);
+  if (!tr) return '';
+  return favBtn({ type: 'tabella', b, key: nameKeyR(tr), label: tabNameR(b) }, 'Tabella ' + tabNameR(b).replace(/^Tab\. /, ''));
 }
 
 function showScooter(sc) {
