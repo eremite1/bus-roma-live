@@ -67,6 +67,12 @@ jobs:
           print("capolinea con tempi dal GPS:", n)
           PY
 
+      - name: Affidabilità di uscite e rientri (quante volte sono state fatte davvero)
+        continue-on-error: true
+        run: |
+          git fetch -q origin storico analisi || exit 0
+          python tools/affidabilita.py
+
       - name: Aggiungi i nomi delle tabelle confermati con le foto
         continue-on-error: true
         run: |

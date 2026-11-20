@@ -18,7 +18,7 @@ const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStor
 export const isColl = (line) => /^[A-Z]\d{2}$/.test(String(line || ''));
 const DEPOT_NAMES = { G: 'Grottarossa', M: 'Magliana', P: 'Portonaccio', T: 'Tor Vergata', A: 'Prenestina' };
 
-let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null, veri = {};
+let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null, veri = {}, affid = null;
 const dayCache = {}; // 'AAAA-MM-GG' -> { blocks, rimessa }
 let dayIndex = null;
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -61,6 +61,13 @@ export function rimessaRun(trips, run, R = rim) {
 const hmS = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
 const tilde = (f) => (f >= 2 ? '≈' : '');
 // margine d'errore dell'uscita in minuti: 0 = certo, ±2 si dà come certo, altrimenti si mostra una fascia
+// affidabilità: quante volte negli ultimi giorni quell'uscita/rientro è stata fatta davvero (vista nel GPS)
+function affTxt(kind, t) {
+  const a = affid && affid[kind] && affid[kind][`${t[3]}@${t[1]}>${t[4]}`];
+  if (!a || a[1] < 3) return '';
+  const p = Math.round((a[0] / a[1]) * 100);
+  return `<span class="rn-aff ${p >= 85 ? 'ok' : p >= 60 ? 'mid' : 'low'}" title="fatta ${a[0]} volte su ${a[1]} negli ultimi giorni">${p}% · ${a[0]}/${a[1]}</span>`;
+}
 const margine = (f) => (f <= 0.5 ? 0 : f < 2 ? 3 : 5);
 const tildeH = (f) => (f >= 2 ? '<span class="approx">≈</span>' : '');
 const DEPOT_STOPS = new Set();
@@ -70,6 +77,7 @@ export async function loadBlocks() {
   try { names = await (await fetch('data/tabelle.json', { cache: 'no-cache' })).json(); } catch (e) { names = {}; }
   try { rim = await (await fetch('data/rimessa.json', { cache: 'no-cache' })).json(); } catch (e) { rim = null; }
   try { veri = await (await fetch('data/tempi_veri.json', { cache: 'no-cache' })).json(); } catch (e) { veri = {}; }
+  try { affid = await (await fetch('data/affidabilita.json', { cache: 'no-cache' })).json(); } catch (e) { affid = null; }
   // nomi confermati da tutti gli utenti (foto delle tabelle), salvati sul ponte
   const PX = (window.CONFIG && window.CONFIG.PROXY_URL) || '';
   if (PX) {
@@ -227,7 +235,7 @@ async function render() {
         } else if (v && ci > run.idx && ci <= run.idx + run.colls) live = 'sta rientrando ora';
         state = now < 0 ? 'later' : live ? 'on' : t < now ? 'done' : mins(run.start) > now ? 'later' : 'on';
       }
-      rows.push({ b, run, t, rm, dep, live, expected, state, v: state === 'done' || (out && state === 'later') ? null : v,
+      rows.push({ b, trips, run, t, rm, dep, live, expected, state, v: state === 'done' || (out && state === 'later') ? null : v,
         line: lines.length > 1 ? lines.join(' › ') : run.line });
     }
   }
@@ -254,7 +262,7 @@ async function render() {
     return `<li class="rn-${r.state}" data-b="${esc(r.b)}" data-v="${r.v ? esc(r.v.id) : ''}">
       <div class="rn-time">${timeH}</div>
       ${C.badge(r.line, C.colorOf({ line: r.line.split(' ')[0] }))}
-      <div class="grow"><div class="title">${head}</div>
+      <div class="grow"><div class="title">${head} ${affTxt(out ? 'u' : 'r', out ? r.trips[R.first] : r.trips[R.idx])}</div>
         <div class="muted">${sub}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
         ${r.live ? `<div class="rn-live">● ${esc(r.live)}</div>` : !r.v && r.state === 'on' ? '<div class="muted">vettura non vista</div>' : ''}</div>
       <div class="when rn-when">${r.v ? `<span class="rn-car">${esc(r.v.vehicleNo)}</span>` : ''}
@@ -304,7 +312,7 @@ async function render() {
       <button class="btn ghost" type="button" id="rnAll">Tutto il giorno</button>
     </form>
     ${rows.length ? `<ul class="rows">${rows.map(row).join('')}</ul>` : '<p class="muted">Nessuna tabella in questa fascia.</p>'}
-    <p class="muted">L'orario è ${out ? "l'uscita dalla rimessa" : 'il rientro in rimessa'}: preciso quando c'è il collegamento, altrimenti calcolato col tempo deposito-capolinea (con ≈ quando è una stima dalla distanza).${out ? '' : ' Il bus spesso rientra prima se arriva in anticipo (vedi stato in diretta).'}
+    <p class="muted">L'orario è ${out ? "l'uscita dalla rimessa" : 'il rientro in rimessa'}: preciso quando c'è il collegamento, altrimenti calcolato col tempo deposito-capolinea (con ≈ quando è una stima dalla distanza). La percentuale colorata dice quante volte, negli ultimi giorni, ${out ? "quell'uscita" : 'quel rientro'} è stato fatto davvero (visto dal GPS): basso vuol dire che spesso salta (vettura mancante, turno scoperto) o che la vettura non trasmette.${out ? '' : ' Il bus spesso rientra prima se arriva in anticipo (vedi stato in diretta).'}
       Il deposito delle linee senza collegamento è dedotto dalle altre tabelle della stessa linea.</p>`;
   el.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { view.tab = b.dataset.tab; store('rientriVista2', view); render(); }; });
   document.getElementById('rnForm').onsubmit = (e) => {

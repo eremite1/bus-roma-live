@@ -149,6 +149,7 @@ def main():
     tab, tab_t = carica_tabelle(), time.time()
     ultimo_salva = time.time()
     usc = {"vicino": {}, "nuove": []}
+    viste = {}
     while time.time() < fine:
         now = datetime.now(ROME)
         if time.time() - tab_t > 3600:
@@ -178,6 +179,14 @@ def main():
                     s[4] = ev(last).delay
                 s[5] = int(time.time())
         vp = feed("vehicles")
+        if vp:
+            # corse fatte davvero: quelle che una vettura sta trasmettendo con la sua posizione
+            for e in vp.entity:
+                if e.HasField("vehicle") and e.vehicle.trip.trip_id:
+                    info = tab.get(e.vehicle.trip.trip_id)
+                    if info:
+                        day = (now - timedelta(days=1)) if now.hour < 4 and info[1] >= 1440 else now
+                        viste.setdefault(day.strftime("%Y-%m-%d"), {})[info[0]] = e.vehicle.vehicle.label or e.vehicle.vehicle.id
         if vp and RIM:
             try:
                 traccia_uscite(vp, now, usc)
@@ -206,6 +215,13 @@ def main():
             os.makedirs(os.path.dirname(PEND), exist_ok=True)
             json.dump(stato, open(PEND, "w"), separators=(",", ":"))
             salva_uscite(usc, now)
+            for d, rec in viste.items():
+                p = os.path.join(ARCH, "corse", d, "viste.json")
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                old = json.load(open(p)) if os.path.exists(p) else {}
+                old.update(rec)
+                json.dump(old, open(p, "w"), separators=(",", ":"), ensure_ascii=False)
+            viste = {}
             salva(f"Corse e vetture {now:%Y-%m-%d %H:%M}")
             print(now.strftime("%H:%M"), "ore chiuse:", len(pronti), "in corso:", len(stato))
             ultimo_salva = time.time()
