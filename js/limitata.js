@@ -86,7 +86,7 @@ export async function openLimitata(start) {
 // mentre i due sensi opposti della stessa strada restano separati (niente inversione a U in mezzo alla strada).
 // Agli incroci si può passare da una linea all'altra solo con svolte fino a 90°.
 const CELL = 20, SECT = 8;
-const OWN = 1.0, OTHER = 1.35;      // costo al metro: strade della linea stessa / di altre linee
+const OWN = 1.0, OTHER = 1.0;      // fuori servizio: nessuna preferenza, conta solo la strada più corta tra quelle dei bus
 const TURN_COST = [0, 15, 45];      // metri "virtuali" per dritto, curva lieve, svolta a 90°
 let netCache = null;
 
