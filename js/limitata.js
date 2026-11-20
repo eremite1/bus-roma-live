@@ -1,10 +1,11 @@
 // LIMITATA
-// "Ho N minuti: fin dove posso andare avanti lungo la linea (fuori servizio), girare e tornare qui?"
-// - andata: lungo la linea dalla mia posizione alle fermate successive;
-// - giro e ritorno: il percorso più breve SOLO su strade dove passano già linee bus (rete costruita dai
-//   percorsi di tutte le linee ATAC, nel loro senso di marcia), con priorità alla linea stessa: niente
-//   stradine strette né inversioni a U dove un bus non può farle;
-// - si torna sulla linea in senso opposto fino all'altezza della mia posizione.
+// "Sono in ritardo, ho N minuti per arrivare al capolinea: dove rientro in servizio?"
+// - andata FUORI SERVIZIO: dalla mia posizione al punto di inversione, qualsiasi percorso purché su strade
+//   dove passano già linee bus (rete costruita dai percorsi di tutte le linee ATAC, nel loro senso di marcia),
+//   con una leggera preferenza per la linea stessa: niente stradine strette né inversioni a U impossibili;
+// - ritorno IN SERVIZIO: dal punto di inversione (una fermata della linea in senso opposto) fino al capolinea,
+//   SEMPRE sul percorso della linea, perché quel tratto si fa con i passeggeri.
+// Scelgo il punto che fa servire più strada possibile restando nei minuti.
 // I tempi arrivano da TomTom con il traffico attuale (tramite il ponte); senza TomTom stimo dalla velocità dei bus.
 
 import { decodePolyline } from './api.js';
@@ -106,7 +107,7 @@ function buildNet(center, radiusM, line) {
     }
     return n;
   };
-  const addEdge = (a, b, w, len, j = 0) => { if (a === b) return; const o = out[a].get(b); if (!o || o[0] > w) out[a].set(b, [w, len, j]); };
+  const addEdge = (a, b, w, len, j = 0, kind = 0) => { if (a === b) return; const o = out[a].get(b); if (!o || o[0] > w) out[a].set(b, [w, len, j, kind]); };
   const lineL = String(line).toLowerCase();
   for (const [rid, list] of Object.entries(C.store.shapes || {})) {
     const r = C.store.routes && C.store.routes[rid];
@@ -157,7 +158,7 @@ function buildNet(center, radiusM, line) {
             let df = Math.abs(mv - sa) % (2 * Math.PI); if (df > Math.PI) df = 2 * Math.PI - df;
             if (df > Math.PI * 0.55) continue;
           }
-          addEdge(a, b, len + TURN_COST[d], len, d >= 1 ? 1 : 0);   // ogni cambio di direzione fuori dal tracciato conta come svolta
+          addEdge(a, b, len + TURN_COST[d], len, d >= 1 ? 1 : 0, 1);   // ogni cambio di direzione fuori dal tracciato conta come svolta
         }
       }
     }
@@ -181,49 +182,68 @@ function buildNet(center, radiusM, line) {
 
 const secDiff = (a, b) => { const d = Math.abs(a - b) % SECT; return Math.min(d, SECT - d); };
 
-// costo per arrivare al nodo "target" da ogni nodo (Dijkstra all'indietro), fino a maxCost.
+// costo per arrivare da "source" a ogni nodo (Dijkstra), fino a maxCost.
 // Regola anti-inversione: dopo una svolta forte (≥90°) o un cambio di linea servono almeno due tratti dritti
 // (~40 m) prima della svolta successiva: così due svolte a 90° attaccate non diventano un'inversione a U.
 // Stato = nodo*3 + c, con c = tratti dritti ancora da fare prima di poter svoltare (0..2).
 const ST = 3;
-function costsTo(net, target, maxCost) {
+function costsFrom(net, source, maxCost) {
   const N = net.xy.length;
-  const rin = net.rin || (net.rin = (() => { const r = Array.from({ length: N }, () => []); net.out.forEach((m, a) => m.forEach(([w, len, j], b) => r[b].push([a, w, j]))); return r; })());
-  const dist = new Float64Array(ST * N).fill(Infinity), next = new Int32Array(ST * N).fill(-1);
+  const dist = new Float64Array(ST * N).fill(Infinity), prev = new Int32Array(ST * N).fill(-1);
   const heap = [];
   const push = (x) => { heap.push(x); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-  for (let c = 0; c < ST; c++) { dist[ST * target + c] = 0; push([0, ST * target + c]); }
-  // stati precedenti possibili: arco "svolta" porta sempre a c'=2 partendo da c=0; arco dritto porta a max(0,c-1)
-  const preds = (j, c2) => (j ? (c2 === 2 ? [0] : []) : c2 === 0 ? [0, 1] : c2 === 1 ? [2] : []);
+  dist[ST * source] = 0; push([0, ST * source]);
   while (heap.length) {
-    const [d, sv] = pop();
-    if (d > dist[sv] || d > maxCost) continue;
-    const v = Math.floor(sv / ST), c2 = sv % ST;
-    for (const [a, w, j] of rin[v]) {
-      for (const c of preds(j, c2)) {
-        const sa = ST * a + c, nd = d + w;
-        if (nd < dist[sa]) { dist[sa] = nd; next[sa] = sv; push([nd, sa]); }
-      }
+    const [d, su] = pop();
+    if (d > dist[su] || d > maxCost) continue;
+    const u = Math.floor(su / ST), c = su % ST;
+    for (const [v, [w, , j]] of net.out[u]) {
+      if (j && c) continue;                       // svolta non ancora permessa
+      const sv = ST * v + (j ? 2 : Math.max(0, c - 1)), nd = d + w;
+      if (nd < dist[sv]) { dist[sv] = nd; prev[sv] = su; push([nd, sv]); }
     }
   }
-  return { dist, next };
+  return { dist, prev };
+}
+
+// percorso (coordinate e metri veri) dalla sorgente al nodo n, nel suo stato migliore
+function pathTo(net, D, n) {
+  let best = -1, bd = Infinity;
+  for (let c = 0; c < ST; c++) if (D.dist[ST * n + c] < bd) { bd = D.dist[ST * n + c]; best = ST * n + c; }
+  if (best < 0) return null;
+  const pts = []; let len = 0, s = best, guard = 0;
+  while (s >= 0 && guard++ < 50000) {
+    const u = Math.floor(s / ST); pts.push(net.xy[u]);
+    const p = D.prev[s]; if (p < 0) break;
+    len += net.out[Math.floor(p / ST)].get(u)[1]; s = p;
+  }
+  return { pts: pts.reverse(), len, cost: bd };
+}
+
+function cutJunctions(net, pts) {
+  let n = 0;
+  net.out.forEach((m, a) => {
+    if (!pts.some((p) => distance(p, net.xy[a]) < 40)) return;
+    for (const [b, e] of m) if (e[3] === 1) { m.delete(b); n++; }
+  });
+  return n > 0;
 }
 
 // inversione a U: la direzione cambia di più di 150° nel giro di 80 metri
-function hasUturn(path) {
+function hasUturn(path, where) {
   const k = Math.cos((path[0][1] * Math.PI) / 180);
   const hs = [];
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1], b = path[i], L = distance(a, b);
     if (L < 3) continue;
-    hs.push([Math.atan2(b[1] - a[1], (b[0] - a[0]) * k), L]);
+    hs.push([Math.atan2(b[1] - a[1], (b[0] - a[0]) * k), L, b]);
   }
   for (let i = 0; i < hs.length; i++) {
     let run = 0;
     for (let j = i + 1; j < hs.length && run < 80; j++) {
       let d = Math.abs(hs[j][0] - hs[i][0]) % (2 * Math.PI); if (d > Math.PI) d = 2 * Math.PI - d;
-      if (d > (150 * Math.PI) / 180) return true;
+      if (d > (150 * Math.PI) / 180) return where ? hs[j][2] : true;
       run += hs[j][1];
     }
   }
@@ -241,91 +261,96 @@ const pointAt = (route, at) => route.coords[Math.max(0, route.cum.findIndex((x) 
 async function compute(start, minutes) {
   const out = document.getElementById('limOut');
   if (!minutes || minutes < 5) { out.innerHTML = '<p class="late">Inserisci almeno 5 minuti.</p>'; return; }
-  out.innerHTML = '<div class="spinner">Calcolo il giro sulle strade dei bus…</div>';
+  out.innerHTML = '<div class="spinner">Calcolo la limitata sulle strade dei bus…</div>';
   await new Promise((r) => setTimeout(r, 30));
   const { mine, opp } = await lineData(start.line, start.dir);
   if (!mine) { out.innerHTML = '<p class="late">Non trovo il percorso della linea.</p>'; return; }
   const R = buildRoute(decodePolyline(mine.p, 5));
-  const O = opp ? buildRoute(decodePolyline(opp.p, 5)) : R;   // circolare: si torna sulla linea stessa
+  const O = opp ? buildRoute(decodePolyline(opp.p, 5)) : R;   // circolare: si rientra sulla linea stessa
+  const oStops = (opp || mine).stops || [];
   const me = nearestAt(R, start.pos);
-  const meOpp = nearestAt(O, start.pos);
-  if (me.m > 200) { out.innerHTML = '<p class="late">Non sei sul percorso della linea: non posso calcolare la limitata.</p>'; return; }
+  if (me.m > 300) { out.innerHTML = '<p class="late">Non sei sul percorso della linea: non posso calcolare la limitata.</p>'; return; }
 
   // velocità per le stime (traffico raccolto dalla mappa), poi rifinita con TomTom sul giro scelto
   const segs = C.traffic.segs || [];
   const kmh = segs.length ? Math.max(8, Math.min(30, segs.reduce((a, x) => a + x.kmh, 0) / segs.length)) : 18;
   const mps = kmh / 3.6;
   const budget = minutes * 60;
-  const reach = Math.min(MAX_AHEAD_M, budget * mps * 0.6 + 1500);   // fin dove ha senso cercare
+  const reach = Math.min(MAX_AHEAD_M, budget * mps * 0.7 + 1500);
 
   const net = buildNet(start.pos, reach + 2000, start.line);
-  const target = net.nodeOf(pointAt(O, meOpp.at), secAt(O, meOpp.at, net.k));
-  if (target < 0) { out.innerHTML = '<p class="late">Non riesco a costruire la rete stradale qui intorno.</p>'; return; }
-  const { dist, next } = costsTo(net, target, reach * 3);
-
-  // punti dove girare: le fermate davanti a me (più la fine del percorso)
-  const stopsAhead = (mine.stops || []).map((x) => ({ name: x[2], p: [x[0], x[1]], at: nearestAt(R, [x[0], x[1]]).at }))
-    .filter((x) => x.at > me.at + 100 && x.at <= me.at + reach).sort((a, b) => a.at - b.at);
-  const options = [];
-  for (const c of stopsAhead) {
-    const n = net.nodeOf(c.p, secAt(R, c.at, net.k));
-    if (n < 0 || !isFinite(dist[ST * n])) continue;
-    // ricostruisco il ritorno: lunghezza vera
-    const path = [];
-    let len = 0, su = ST * n, guard = 0;
-    while (Math.floor(su / ST) !== target && su >= 0 && guard++ < 20000) { const u = Math.floor(su / ST); path.push(net.xy[u]); const sv = next[su]; if (sv < 0) break; len += net.out[u].get(Math.floor(sv / ST))[1]; su = sv; }
-    path.push(net.xy[target]);
-    if (hasUturn(path)) continue;   // controllo di sicurezza: niente inversioni a U nel giro
-    const fwdM = c.at - me.at;
-    const fwd = fwdM / mps, back = len / mps;
-    options.push({ ...c, fwdM, backM: len, fwd, back, total: fwd + TURN_S / 2 + back, path, km: fwdM / 1000 });
+  const src = net.nodeOf(pointAt(R, me.at), secAt(R, me.at, net.k));
+  if (src < 0) { out.innerHTML = '<p class="late">Non riesco a costruire la rete stradale qui intorno.</p>'; return; }
+  // punti di inversione: le fermate della linea in senso opposto (da lì in servizio fino al capolinea)
+  const capo = oStops.length ? oStops[oStops.length - 1][2] : 'capolinea';
+  let options = [], bad = [];
+  for (let round = 0; round < 4; round++) {
+  const D = costsFrom(net, src, reach * 2);
+  options = []; bad = [];
+  for (const x of oStops.slice(0, -1)) {
+    const p = [x[0], x[1]];
+    const at = nearestAt(O, p).at;
+    if (distance(p, start.pos) > reach) continue;
+    const n = net.nodeOf(p, secAt(O, at, net.k));
+    if (n < 0) continue;
+    const f = pathTo(net, D, n);
+    if (!f || f.pts.length < 2) continue;
+    const ut = hasUturn(f.pts, true);
+    if (ut) { bad.push(ut); continue; }             // inversione a U: riprovo dopo aver tolto quel raccordo                 // controllo di sicurezza: niente inversioni a U
+    const servM = O.total - at;                     // tratto in servizio fino al capolinea
+    const fwd = f.len / mps, back = servM / mps;
+    options.push({ name: x[2], p, at, fwdM: f.len, backM: servM, fwd, back, total: fwd + TURN_S / 2 + back, path: f.pts });
   }
-  if (!options.length) { out.innerHTML = '<p class="late">Non trovo un giro possibile sulle strade dei bus qui intorno.</p>'; return; }
+  // dove il percorso più breve fa un'inversione a U impossibile, tolgo i raccordi tra linee in quel punto
+  // (restano solo i tracciati veri delle linee) e ricalcolo
+  if (!bad.length || !cutJunctions(net, bad)) break;
+  }
+  if (!options.length) { out.innerHTML = '<p class="late">Non trovo un punto dove girare sulle strade dei bus qui intorno.</p>'; return; }
+  options.sort((a, b) => b.backM - a.backM);        // prima quelli che servono più strada
 
-  // il giro più lungo che sta nei minuti; con TomTom ricontrollo i tempi col traffico vero (fino a 3 tentativi)
-  let ok = options.filter((o) => o.total <= budget);
-  let bestOpt = ok.length ? ok[ok.length - 1] : null, live = false;
+  // il punto che serve più strada restando nei minuti; con TomTom ricontrollo i tempi (fino a 3 tentativi)
+  const fits = () => options.filter((o) => o.total <= budget);
+  let bestOpt = fits()[0] || null, live = false;
   for (let tries = 0; bestOpt && tries < 3; tries++) {
-    const t = await tomtom(R, me.at, bestOpt);
+    const t = await tomtom(O, bestOpt);
     if (!t) break;
     live = true;
-    bestOpt.fwd = t.fwd; bestOpt.back = t.back; bestOpt.total = t.fwd + TURN_S / 2 + t.back;
+    bestOpt.fwd = t.fwd; bestOpt.back = t.back; bestOpt.total = t.fwd + TURN_S / 2 + t.back; bestOpt.tt = true;
     if (bestOpt.total <= budget) break;
-    const i = options.indexOf(bestOpt);
-    bestOpt = i > 0 ? options[i - 1] : null;
+    bestOpt = fits().find((o) => !o.tt) || null;
   }
 
   if (bestOpt) {
-    const fwdLine = R.coords.filter((_, i) => R.cum[i] >= me.at && R.cum[i] <= bestOpt.at);
+    const servLine = O.coords.filter((_, i) => O.cum[i] >= bestOpt.at);
     C.map.getSource('route').setData({ type: 'FeatureCollection', features: [
-      { type: 'Feature', geometry: { type: 'LineString', coordinates: fwdLine }, properties: { color: '#F06A00', op: 0.95 } },
-      { type: 'Feature', geometry: { type: 'LineString', coordinates: bestOpt.path }, properties: { color: '#138A4B', op: 0.95 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: bestOpt.p }, properties: { color: '#F06A00' } },
+      { type: 'Feature', geometry: { type: 'LineString', coordinates: bestOpt.path }, properties: { color: '#F06A00', op: 0.95 } },
+      { type: 'Feature', geometry: { type: 'LineString', coordinates: servLine }, properties: { color: '#138A4B', op: 0.95 } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: bestOpt.p }, properties: { color: '#138A4B' } },
     ] });
-    C.fitTo(fwdLine.concat(bestOpt.path));
-    speak(`Puoi girare a ${bestOpt.name}. Rientro previsto in ${Math.round(bestOpt.total / 60)} minuti.`);
+    C.fitTo(bestOpt.path.concat(servLine));
+    speak(`Limitata: rientri in servizio a ${bestOpt.name}. Arrivo al capolinea in circa ${Math.round(bestOpt.total / 60)} minuti.`);
   }
   const row = (o) => `<li class="${o === bestOpt ? 'lim-best' : ''}"><div class="grow"><div class="title">${esc(o.name)}</div>
-      <div class="muted">${fmtKm(o.fwdM)} avanti · andata ${fmtMin(o.fwd)} · giro e ritorno ${fmtKm(o.backM)}, ${fmtMin(o.back)}</div></div>
+      <div class="muted">fuori servizio ${fmtKm(o.fwdM)}, ${fmtMin(o.fwd)} · in servizio ${fmtKm(o.backM)}, ${fmtMin(o.back)}</div></div>
       <div class="when ${o.total <= budget ? 'rt-time' : 'late'}">${fmtMin(o.total)}</div></li>`;
-  const bi = bestOpt ? options.indexOf(bestOpt) : 0;
-  const shown = options.slice(Math.max(0, bi - 2), bi + 2);
+  const bi = bestOpt ? options.indexOf(bestOpt) : options.reduce((b, o, i) => (o.total < options[b].total ? i : b), 0);
+  const shown = options.slice(Math.max(0, bi - 2), bi + 3);
   out.innerHTML = `
     ${bestOpt
-      ? `<div class="live-box"><div>Gira dopo <b>${esc(bestOpt.name)}</b> (${fmtKm(bestOpt.fwdM)} avanti) seguendo il percorso verde: rientro in circa <b>${fmtMin(bestOpt.total)}</b> su ${minutes}.</div></div>`
-      : `<p class="late">Con ${minutes} minuti non c'è un punto dove girare: il più vicino richiede ${fmtMin(options[0].total)}.</p>`}
+      ? `<div class="live-box"><div>Fuori servizio fino a <b>${esc(bestOpt.name)}</b> (percorso arancio), poi <b>in servizio</b> sul percorso della ${esc(start.line)} fino a <b>${esc(capo)}</b> (verde): arrivo in circa <b>${fmtMin(bestOpt.total)}</b> su ${minutes}.</div></div>`
+      : `<p class="late">Con ${minutes} minuti non ci sta nessuna limitata: la più corta richiede ${fmtMin(options[bi].total)}.</p>`}
     <ul class="rows">${shown.map(row).join('')}</ul>
-    <p class="muted">Il giro passa solo su strade dove circolano già linee bus, nel loro senso di marcia, preferendo il percorso della ${esc(start.line)}. ${live ? 'Tempi da TomTom con il traffico attuale' : `Tempi stimati (≈${Math.round(kmh)} km/h)`}. In arancio l'andata, in verde giro e ritorno. Fa fede sempre la disposizione della centrale.</p>`;
+    <p class="muted">Il tratto fuori servizio passa solo su strade dove circolano già linee bus, nel loro senso di marcia. Il tratto in servizio segue sempre il percorso della linea. ${live ? 'Tempi da TomTom con il traffico attuale' : `Tempi stimati (≈${Math.round(kmh)} km/h)`}. Fa fede sempre la disposizione della centrale.</p>`;
 }
 
-// tempi veri con TomTom: punti presi lungo il percorso ogni ~300 m, così segue le stesse strade
-async function tomtom(R, fromAt, o) {
+// tempi veri con TomTom: punti presi lungo i due tratti ogni ~300 m, così segue le stesse strade
+async function tomtom(O, o) {
   if (!C.PROXY) return null;
-  const fwdPts = [];
-  for (let a = fromAt; a < o.at; a += 300) fwdPts.push(pointAt(R, a));
-  fwdPts.push(o.p);
-  const step = Math.max(1, Math.floor(o.path.length / Math.max(2, Math.ceil(o.backM / 300))));
-  const backPts = o.path.filter((_, i) => i % step === 0).concat([o.path[o.path.length - 1]]);
+  const step = Math.max(1, Math.floor(o.path.length / Math.max(2, Math.ceil(o.fwdM / 300))));
+  const fwdPts = o.path.filter((_, i) => i % step === 0).concat([o.p]);
+  const backPts = [];
+  for (let a = o.at + 300; a < O.total; a += 300) backPts.push(pointAt(O, a));
+  backPts.push(O.coords[O.coords.length - 1]);
   if (fwdPts.length + backPts.length > 140) return null;
   try {
     const res = await fetch(C.PROXY.replace(/\/$/, '') + '/tempi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ punti: fwdPts.concat(backPts) }) });
@@ -336,3 +361,4 @@ async function tomtom(R, fromAt, o) {
     return { fwd: s.slice(0, nf).reduce((a, x) => a + x, 0), back: s.slice(nf).reduce((a, x) => a + x, 0) };
   } catch (e) { return null; }
 }
+
