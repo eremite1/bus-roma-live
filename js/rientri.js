@@ -51,6 +51,8 @@ export function rimessaRun(trips, run, R = rim) {
   if (run.before) { out = mins(run.before[1]); outF = 0; }
   else if (tab[run.startPlace]) { out = mins(run.start) - dur(tab[run.startPlace], mins(run.start)); outF = tab[run.startPlace][1]; }
   else { out = mins(run.start); outF = 3; }
+  // le stime dalla sola distanza escono in media ~3-4 minuti troppo presto (misurato sulle uscite con collegamento)
+  if (outF === 2) out += 3;
   if (run.after) { inn = mins(trips[run.idx + Math.max(1, run.colls)][2]); inF = 0; }
   else if (tab[run.endPlace]) { inn = mins(run.end) + dur(tab[run.endPlace], mins(run.end)); inF = tab[run.endPlace][1]; }
   else { inn = mins(run.end); inF = 3; }
@@ -59,7 +61,7 @@ export function rimessaRun(trips, run, R = rim) {
 const hmS = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
 const tilde = (f) => (f >= 2 ? '≈' : '');
 // margine d'errore dell'uscita in minuti: 0 = certo, ±2 si dà come certo, altrimenti si mostra una fascia
-const margine = (f) => (f <= 0.5 ? 0 : f < 2 ? 3 : 6);
+const margine = (f) => (f <= 0.5 ? 0 : f < 2 ? 3 : 5);
 const tildeH = (f) => (f >= 2 ? '<span class="approx">≈</span>' : '');
 const DEPOT_STOPS = new Set();
 export async function loadBlocks() {
