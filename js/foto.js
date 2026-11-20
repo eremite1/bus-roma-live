@@ -97,7 +97,7 @@ async function leggi(file, date) {
     const rimT = [...text.matchAll(/(\d{1,2}[:.]\d{2})\s*RIM\b|RIM\W+\w+\W+(\d{1,2}[:.]\d{2})/gi)].map((m) => (m[1] || m[2]).replace('.', ':'));
     el.innerHTML = `<p class="sub">Ho letto <b>${Tm.length}</b> orari. ${cand.length > 1 ? 'Tabelle più simili:' : 'Corrisponde a:'}</p>` + cand.map((c, i) => {
       const lines = [...new Set(c.trips.map((t) => t[3]).filter((l) => !isColl(l)))];
-      const pre = tabName(c.b).includes('/') ? tabName(c.b) : '';
+      const pre = tabName(c.b).includes('/') ? tabName(c.b).replace('≈', '') : '';
       const [pl, pn] = pre ? pre.split('/') : [mLin ? mLin[1] : lines[0], mTab ? mTab[1] : ''];
       const ipo = pre ? '' : ipotesi(c.b, day.blocks);
       return `<div class="tu-card${i === 0 ? ' best' : ''}">

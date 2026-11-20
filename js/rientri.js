@@ -18,7 +18,7 @@ const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStor
 export const isColl = (line) => /^[A-Z]\d{2}$/.test(String(line || ''));
 const DEPOT_NAMES = { G: 'Grottarossa', M: 'Magliana', P: 'Portonaccio', T: 'Tor Vergata', A: 'Prenestina' };
 
-let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null, veri = {}, affid = null;
+let blocks = null, depotPlace = {}, lineDepot = {}, names = {}, rim = null, veri = {}, affid = null, regole = null;
 const dayCache = {}; // 'AAAA-MM-GG' -> { blocks, rimessa }
 let dayIndex = null;
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -78,6 +78,7 @@ export async function loadBlocks() {
   try { rim = await (await fetch('data/rimessa.json', { cache: 'no-cache' })).json(); } catch (e) { rim = null; }
   try { veri = await (await fetch('data/tempi_veri.json', { cache: 'no-cache' })).json(); } catch (e) { veri = {}; }
   try { affid = await (await fetch('data/affidabilita.json', { cache: 'no-cache' })).json(); } catch (e) { affid = null; }
+  try { regole = await (await fetch('data/regole_tabelle.json', { cache: 'no-cache' })).json(); } catch (e) { regole = null; }
   // nomi confermati da tutti gli utenti (foto delle tabelle), salvati sul ponte
   const PX = (window.CONFIG && window.CONFIG.PROXY_URL) || '';
   if (PX) {
@@ -150,7 +151,11 @@ export function tabName(b) {
   const trips = tripsOf(b);
   const k = trips && nameKey(trips);
   const n = k && (names[k] || names[plainKey(k)]);
-  return n || `Tab. ${b.replace(/^0#/, '')}`;
+  if (n) return n;
+  // numero dedotto dalla regola imparata (solo linee "sicure"): si mostra con ≈
+  const L = trips && mainLine(trips), r = regole && regole.linee && regole.linee[L];
+  const d = r && r.dedotte && (r.dedotte[k] || r.dedotte[plainKey(k)]);
+  return d ? `≈${d}` : `Tab. ${b.replace(/^\d+#/, '')}`;
 }
 export function setTabName(b, value) {
   const trips = tripsOf(b);
@@ -485,12 +490,18 @@ export function ipotesi(b, all0) {
     const ok = anchors.filter(([k, n]) => list.indexOf(k) >= 0 && list.indexOf(k) + 1 + off === n).length;
     return { n: i + 1 + off, ok, tot: anchors.length };
   };
+  // se di notte è stata imparata una regola per questa linea, uso quella
+  const rl0 = regole && regole.linee && regole.linee[L];
+  const ipo = rl0 && rl0.ipotesi && (rl0.ipotesi[nameKey(trips)] || rl0.ipotesi[plainKey(nameKey(trips))]);
+  if (ipo) return `Ipotesi: ${ipo} · regola imparata (in ordine di ${rl0.regola[0]}${rl0.regola[1] ? ', a gruppi per ' + rl0.regola[1] : ''}): indovina ${rl0.ok} su ${rl0.tot} tabelle confermate a occhi chiusi. Fotografa la tabella vera per confermarla!`;
   const g1 = guess(same), g2 = guess(noShort);
   const best = g2.ok > g1.ok ? g2 : g1, other = best === g1 ? g2 : g1;
   let msg = `Ipotesi: ${L}/${best.n}`;
   if (other.n !== best.n) msg += ` (oppure ${L}/${other.n})`;
   if (shortMorning(trips)) msg += ' · giro corto della mattina: potrebbe avere un numero a parte';
   msg += anchors.length ? ` · basata su ${anchors.length} tabell${anchors.length === 1 ? 'a confermata' : 'e confermate'} della ${L}` : ' · nessuna tabella della linea ancora confermata';
+  const rl = regole && regole.linee && regole.linee[L];
+  if (rl) msg += ` · regola imparata: in ordine di ${rl.regola[0]}${rl.regola[1] ? ', a gruppi per ' + rl.regola[1] : ''}, indovina ${rl.ok} su ${rl.tot} a occhi chiusi`;
   return msg + '. Fotografa la tabella vera per confermarla!';
 }
 

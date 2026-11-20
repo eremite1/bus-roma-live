@@ -92,6 +92,10 @@ jobs:
           print("nomi nuovi:", len(new))
           PY
 
+      - name: Impara la numerazione delle tabelle dalle confermate
+        continue-on-error: true
+        run: python tools/impara_tabelle.py
+
       - name: Salva i dati nel repository
         run: |
           git config user.name "github-actions[bot]"
