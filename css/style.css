@@ -514,3 +514,8 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .cz-traffic { font-size: 14px; font-weight: 700; }
 .cz-t.ok { color: #5BE49B; } .cz-t.mid { color: #FFB34D; } .cz-t.slow { color: #FF7A7A; }
 @media (max-width: 380px) { .cz-delay b { font-size: 40px; } .cz-grid b { font-size: 17px; } .cz-clock { font-size: 22px; } }
+.rn-range { display: block; line-height: 1.1; }
+.rn-range small { display: block; font-size: 15px; font-weight: 800; }
+.rn-range small::before { content: '– '; color: var(--ink-3); }
+.rn-big { font-weight: 800; font-size: 15px; color: var(--ink); }
+.rn-small { font-size: 12px; }

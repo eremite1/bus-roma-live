@@ -43,7 +43,8 @@ export function rimessaRun(trips, run, R = rim) {
   const fh = (h) => F[h % 24] || 1;
   // tempi veri comunicati dagli autisti (riportati "a strade libere" col fattore dell'ora in cui sono stati misurati)
   const tab = { ...((R && R.tempi && R.tempi[D]) || {}) };
-  for (const [p, [m, h]] of Object.entries((veri && veri[D]) || {})) tab[p] = [m / fh(h), 1];
+  // flag 0.5 = tempo vero (autista o almeno 5 uscite viste dal GPS): errore di ±2 minuti
+  for (const [p, [m, h, n]] of Object.entries((veri && veri[D]) || {})) tab[p] = [m / fh(h), n == null || n >= 5 ? 0.5 : 1];
   // minuti a strade libere x fattore del traffico dell'ora (dagli orari ATAC)
   const dur = (e, at) => (e[1] === 0 ? 0 : Math.round(e[0] * fh(Math.floor(at / 60))));
   let out, outF, inn, inF;
@@ -57,6 +58,8 @@ export function rimessaRun(trips, run, R = rim) {
 }
 const hmS = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
 const tilde = (f) => (f >= 2 ? '≈' : '');
+// margine d'errore dell'uscita in minuti: 0 = certo, ±2 si dà come certo, altrimenti si mostra una fascia
+const margine = (f) => (f <= 0.5 ? 0 : f < 2 ? 3 : 6);
 const tildeH = (f) => (f >= 2 ? '<span class="approx">≈</span>' : '');
 const DEPOT_STOPS = new Set();
 export async function loadBlocks() {
@@ -237,11 +240,20 @@ async function render() {
     const gap = Math.abs(out ? mins(R.start) - r.t : r.t - mins(R.end));
     const collTxt = (out ? `in linea alle <b>${esc(h24(R.start))}</b>` : `fine servizio <b>${esc(h24(R.end))}</b>`)
       + (coll ? ` · ${esc(coll[3])}` : f === 3 ? ' · tempo dal deposito sconosciuto' : gap ? ` · ${f >= 2 ? 'circa ' : ''}${gap} min ${out ? 'dal' : 'al'} deposito${f >= 2 ? ' (stima)' : ''}` : '');
+    const mg = out && r.expected == null && f !== 3 ? margine(f) : 0;
+    const timeH = r.expected != null ? `<span class="rn-exp">${hm(r.expected + (r.t - mins(R.end)))}</span><s>${esc(time)}</s>`
+      : mg ? `<span class="rn-range">${hmS(r.t - mg)}<small>${hmS(r.t + mg)}</small></span>` : tildeH(f) + esc(time);
+    const head = out
+      ? (mg ? `<b class="rn-big">Esce tra le ${hmS(r.t - mg)} e le ${hmS(r.t + mg)}</b>` : f === 3 ? `<b class="rn-big">Uscita: orario non stimabile</b>` : `<b class="rn-big">Esce alle ${esc(time)}</b>`)
+      : `da ${esc(place)}`;
+    const sub = out
+      ? `<b>${esc(tabName(r.b))}</b> · <span class="rn-small">in linea a ${esc(place)} alle ${esc(h24(R.start))}${coll ? ' · ' + esc(coll[3]) : ''}</span>`
+      : `<b>${esc(tabName(r.b))}</b> · ${collTxt}`;
     return `<li class="rn-${r.state}" data-b="${esc(r.b)}" data-v="${r.v ? esc(r.v.id) : ''}">
-      <div class="rn-time">${r.expected != null ? `<span class="rn-exp">${hm(r.expected + (r.t - mins(R.end)))}</span><s>${esc(time)}</s>` : tildeH(f) + esc(time)}</div>
+      <div class="rn-time">${timeH}</div>
       ${C.badge(r.line, C.colorOf({ line: r.line.split(' ')[0] }))}
-      <div class="grow"><div class="title">${out ? 'da' : 'a'} ${esc(place)}</div>
-        <div class="muted"><b>${esc(tabName(r.b))}</b> · ${collTxt}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
+      <div class="grow"><div class="title">${head}</div>
+        <div class="muted">${sub}${r.dep ? ' · ' + esc(depotName(r.dep)) : ''}${r.state === 'done' ? (out ? ' · uscita' : ' · rientrata') : ''}</div>
         ${r.live ? `<div class="rn-live">● ${esc(r.live)}</div>` : !r.v && r.state === 'on' ? '<div class="muted">vettura non vista</div>' : ''}</div>
       <div class="when rn-when">${r.v ? `<span class="rn-car">${esc(r.v.vehicleNo)}</span>` : ''}
         <button class="link-btn" data-tab-open>tabella</button></div></li>`;

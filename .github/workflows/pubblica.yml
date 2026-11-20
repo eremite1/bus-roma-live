@@ -36,6 +36,37 @@ jobs:
         continue-on-error: true   # se Roma Mobilità non risponde, si tengono i dati del giorno prima
         run: python tools/build_static.py
 
+      - name: Tempi deposito-capolinea visti dal GPS (vetture che escono già con la corsa)
+        continue-on-error: true
+        run: |
+          git fetch -q origin storico || exit 0
+          python - <<'PY'
+          import json, subprocess, statistics
+          from datetime import date, timedelta
+          files = subprocess.run(["git", "ls-tree", "--name-only", "origin/storico", "uscite/"], capture_output=True, text=True).stdout.split()
+          da = (date.today() - timedelta(days=30)).isoformat()
+          obs = {}
+          for f in files:
+              if f.split("/")[-1][:10] < da:
+                  continue
+              for x in json.loads(subprocess.run(["git", "show", "origin/storico:" + f], capture_output=True, text=True).stdout or "[]"):
+                  if x.get("coll"):
+                      continue  # dove c'è il collegamento l'orario è già certo
+                  obs.setdefault((x["D"], x["p"]), []).append((x["m"], x["h"]))
+          p = "data/tempi_veri.json"; t = json.load(open(p))
+          n = 0
+          for (D, pl), v in obs.items():
+              if len(v) < 3:
+                  continue
+              m = round(statistics.median(a for a, _ in v)); h = round(statistics.median(b for _, b in v))
+              old = t.get(D, {}).get(pl)
+              if old and len(old) < 3 and len(v) < 5:
+                  continue  # il dato dato da un autista vale finché il GPS non ha almeno 5 uscite
+              t.setdefault(D, {})[pl] = [m, h, len(v)]; n += 1
+          json.dump(t, open(p, "w"), ensure_ascii=False, indent=1)
+          print("capolinea con tempi dal GPS:", n)
+          PY
+
       - name: Aggiungi i nomi delle tabelle confermati con le foto
         continue-on-error: true
         run: |
