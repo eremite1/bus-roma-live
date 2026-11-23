@@ -3,7 +3,7 @@
 import { api, decodePolyline, rawTripId } from './api.js';
 import { decodeTripUpdates } from './gtfsrt.js';
 import { initDeviation, openDeviation, setupDeviationLayers } from './deviation.js';
-import { initNav, openNavPicker, setupNavLayers, navState } from './nav.js';
+import { initNav, openNavPicker, setupNavLayers, navState, startNavTrip } from './nav.js';
 import { Traffic, setupTrafficLayer } from './traffic.js';
 import { initDriver, openDriver, stopDriver, driverActive, showDriverPanel, update as updateDriver } from './driver.js';
 import { initLimitata, openLimitata } from './limitata.js';
@@ -1661,7 +1661,7 @@ function setTraffic(on) {
 $('trafficChip').classList.toggle('active', state.trafficOn);
 $('trafficChip').onclick = () => setTraffic(!state.trafficOn);
 initDriver({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf, badge, statusOf, lineInfo, vDir, setLine, clearLine, showPoint,
-  traffic: state.traffic, hasGps: () => !!state.gps, openLimitata });
+  traffic: state.traffic, hasGps: () => !!state.gps, openLimitata, openNavPicker, startNavTrip });
 initRientri({ openFoto, favBtn, state, openSheet, toast, badge, colorOf, vehicleById, showVehicle: (v) => showVehicle(v), showPoint, refreshAtac: () => PROXY && fetchAtacDelays(),
   delayOf: (v) => { const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || a.byVehicle.get(v.id.slice(1))); return x ? x.delay : null; } });
 initFoto({ openSheet, toast });

@@ -265,6 +265,7 @@ export async function update() {
       ${trafficH ? `<div class="cz-traffic">${trafficH}</div>` : ''}
     </div>
     <div class="actions">
+      <button class="btn" id="drvNav">🧭 Navigatore</button>
       <button class="btn" id="drvLim">Limitata</button>
       <button class="btn ghost" id="drvMute">${isMuted() ? 'Voce spenta' : 'Voce attiva'}</button>
       <button class="btn ghost" id="drvBig">${D.big ? 'Riduci' : 'Ingrandisci'}</button>
@@ -275,8 +276,27 @@ export async function update() {
   document.getElementById('drvBig').onclick = () => { D.big = !D.big; showDriverPanel(); };
   document.getElementById('drvCenter').onclick = () => { D.follow = true; update(); };
   document.getElementById('drvStop').onclick = () => { stopDriver(); forget(); C.closeSheet(); };
+  document.getElementById('drvNav').onclick = () => navCorsa(me, myAt);
   document.getElementById('drvLim').onclick = () => C.openLimitata({ line: me.line, dir: D.dir, pos: [me.lng, me.lat] });
   if (D.follow) C.showPoint([me.lng, me.lat], 15.5);
+}
+
+// navigatore sulla corsa giusta: quella in corso, oppure la prossima se sono già al capolinea
+function navCorsa(me, myAt) {
+  let tid = me.tripId;
+  const B = blocksNow(), b = tid && blockOf(tid), trips = b && B[b];
+  const atEnd = myAt != null && D.route && D.route.total - myAt < 250;
+  if (trips && atEnd) {
+    const ci = trips.findIndex((t) => t[0] === tid);
+    const nx = ci >= 0 ? trips.slice(ci + 1).find((t) => !isColl(t[3])) : null;
+    if (ci >= 0 && trips[ci + 1] && isColl(trips[ci + 1][3]) && (!nx || trips.indexOf(nx) > ci + 1 && tm(nx[1]) - tm(trips[ci][2]) > 60)) {
+      C.toast('Servizio finito: ora c\'è il rientro in rimessa', 5000); return;
+    }
+    if (nx) { tid = nx[0]; C.toast(`Navigatore per la prossima corsa: ${nx[3]} delle ${nx[1]} da ${nx[4]}`, 5000); }
+  }
+  if (!tid) { C.openNavPicker(me.line); return; }
+  const linea = trips ? (trips.find((t) => t[0] === tid) || [])[3] || me.line : me.line;
+  C.startNavTrip(tid, linea);
 }
 
 const p2 = (n) => String(n).padStart(2, '0');

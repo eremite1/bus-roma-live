@@ -8,6 +8,7 @@
 import { decodePolyline } from './api.js';
 import { distance, bearing } from './vehicles.js';
 import { speak, isMuted, setMuted } from './voice.js';
+import { tripInfo, loadVariants } from './data.js';
 
 let C = null;
 export function initNav(ctx) { C = ctx; }
@@ -127,6 +128,23 @@ function lineOptions(linea) {
     }
   }
   return out;
+}
+
+// Navigatore di una corsa precisa (dalla modalità autista): stesso percorso della corsa,
+// anche se è una deviata da tabella o una scolastica.
+export async function startNavTrip(tripId, linea) {
+  await C.loadShapes();
+  await C.loadLineStops();
+  const ti = tripInfo(tripId);
+  if (!ti) { openNavPicker(linea); return; }
+  let opt = null;
+  if (ti.variant) {
+    const v = (await loadVariants(ti.routeId))[ti.variant];
+    if (v) opt = { routeId: ti.routeId, d: v.d, h: v.h || ti.headsign, p: v.p, stops: v.s || [], type: (C.store.routes[ti.routeId] || {}).t };
+  }
+  if (!opt) opt = lineOptions(linea).find((o) => o.routeId === ti.routeId && o.d === ti.dir) || lineOptions(linea).find((o) => o.d === ti.dir);
+  if (!opt) { openNavPicker(linea); return; }
+  startNav(linea, opt, false);
 }
 
 // ---------------- schermata di scelta ----------------
