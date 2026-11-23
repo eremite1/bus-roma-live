@@ -523,3 +523,6 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .rn-aff.ok { background: #E3F6EC; color: #0E7A43; }
 .rn-aff.mid { background: #FFF1DD; color: #A35A00; }
 .rn-aff.low { background: #FDE5E5; color: #B42318; }
+.tb-cell.tb-var { border-left: 3px solid #F06A00; }
+.tb-vtxt { display: block; color: #A35A00; font-weight: 700; font-size: 11px; }
+.var-note { color: #A35A00; }

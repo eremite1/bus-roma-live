@@ -252,13 +252,27 @@ def main():
             shape_trip.setdefault(sid, tid)
 
     # --- percorsi: per ogni linea e direzione teniamo il percorso più usato ---
+    # gli altri percorsi (deviate da tabella, scolastiche, corse limitate o prolungate) sono le "varianti"
     wanted = {}
+    varianti = {}  # shape -> (linea, direzione)
     for (rid, d), cnt in shape_use.items():
         sid = cnt.most_common(1)[0][0]
         wanted[sid] = (rid, d)
+        for other in cnt:
+            if other != sid:
+                varianti[other] = (rid, d)
+    main_of = {v: k for k, v in wanted.items()}  # (linea, direzione) -> percorso principale
+    var_index = {}
+    for tid, t in trips.items():
+        sid = t.get("shape_id") or ""
+        if sid in varianti:
+            compact[tid].append(sid)  # 4° campo: percorso diverso dal solito
+    vpts = defaultdict(list)
     pts = defaultdict(list)
     for s in rows(z, "shapes.txt"):
         sid = s.get("shape_id")
+        if sid in varianti:
+            vpts[sid].append((int(s.get("shape_pt_sequence") or 0), float(s["shape_pt_lat"]), float(s["shape_pt_lon"])))
         if sid in wanted:
             pts[sid].append((int(s.get("shape_pt_sequence") or 0), float(s["shape_pt_lat"]), float(s["shape_pt_lon"])))
     shapes = defaultdict(list)
@@ -270,20 +284,44 @@ def main():
     log("Percorsi:", sum(len(v) for v in shapes.values()))
 
     # --- fermate in ordine per ogni linea e direzione (per il navigatore) ---
-    rep_trips = {shape_trip[sid]: sid for sid in wanted if sid in shape_trip}
+    rep_trips = {shape_trip[sid]: sid for sid in list(wanted) + list(varianti) if sid in shape_trip}
     seqs = defaultdict(list)
     for st in rows(z, "stop_times.txt"):
         tid = st.get("trip_id")
         if tid in rep_trips:
             seqs[tid].append((int(st.get("stop_sequence") or 0), st.get("stop_id")))
     linestops = defaultdict(list)
+    var_stops = {}
     for tid, lst in seqs.items():
         lst.sort()
         sid = rep_trips[tid]
+        if sid in varianti:
+            var_stops[sid] = [[*stop_pos[x], nice(stop_names.get(x, ""))] for _, x in lst if x in stop_pos]
+            continue
         rid, d = wanted[sid]
         stops_out = [[*stop_pos[x], nice(stop_names.get(x, ""))] for _, x in lst if x in stop_pos]
         linestops[rid].append({"d": d, "h": shape_head.get(sid, ""), "s": stops_out})
     log("Fermate per linea:", sum(len(v) for v in linestops.values()))
+
+    # --- varianti: disegno, fermate e "da dove passa di diverso" (una cartella per linea, caricata solo se serve) ---
+    main_names = {}
+    for rid, lst in linestops.items():
+        for x in lst:
+            main_names.setdefault(rid, set()).update(s3[2] for s3 in x["s"])
+    var_out = defaultdict(dict)
+    for sid, plist in vpts.items():
+        plist.sort()
+        rid, d = varianti[sid]
+        st = var_stops.get(sid, [])
+        extra = [x[2] for x in st if x[2] not in main_names.get(rid, set())]
+        var_out[rid][sid] = {"d": d, "h": shape_head.get(sid, ""), "p": encode_polyline(simplify([(la, lo) for _, la, lo in plist])),
+                             "s": st, "x": list(dict.fromkeys(extra))[:6], "n": shape_use[(rid, d)][sid]}
+    vdir = os.path.join(OUT, "varianti")
+    os.makedirs(vdir, exist_ok=True)
+    for rid, obj in var_out.items():
+        with open(os.path.join(vdir, f"{rid}.json"), "w", encoding="utf-8") as f:
+            json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
+    log("Varianti di percorso:", sum(len(v) for v in var_out.values()), "in", len(var_out), "linee")
 
     used_routes = {rid: routes[rid] for rid in route_ids}
     # aggiungiamo anche le linee senza corse oggi (per riconoscere il numero dal codice linea)

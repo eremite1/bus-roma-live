@@ -56,7 +56,28 @@ export function loadLineStops() {
 export function tripInfo(rawId) {
   const t = store.trips && store.trips.trips[rawId];
   if (!t) return null;
-  return { routeId: store.trips.routes[t[0]], headsign: store.trips.headsigns[t[1]], dir: t[2] };
+  return { routeId: store.trips.routes[t[0]], headsign: store.trips.headsigns[t[1]], dir: t[2], variant: t[3] || null };
+}
+
+// Percorsi diversi dal solito (deviate da tabella, scolastiche, limitate/prolungate): uno file per linea,
+// caricato solo quando serve. { shape: { d, h, p, s: fermate, x: fermate fuori dal percorso solito, n: corse } }
+const varCache = {};
+export function loadVariants(routeId) {
+  if (!varCache[routeId]) varCache[routeId] = getJSON(`data/varianti/${encodeURIComponent(routeId)}.json`).catch(() => ({}));
+  return varCache[routeId];
+}
+// la variante di una corsa (o null se fa il percorso solito)
+export async function variantOfTrip(rawId) {
+  const ti = tripInfo(rawId);
+  if (!ti || !ti.variant) return null;
+  const all = await loadVariants(ti.routeId);
+  const v = all[ti.variant];
+  return v ? { ...v, id: ti.variant, routeId: ti.routeId } : null;
+}
+// testo breve: "passa da Padovani, Lea" oppure "percorso diverso dal solito"
+export function variantText(v) {
+  if (!v) return '';
+  return v.x && v.x.length ? `passa da ${v.x.slice(0, 3).map(niceName).join(', ')}` : 'percorso diverso dal solito';
 }
 
 export function routeInfo(routeId) {

@@ -1,3 +1,4 @@
+import { variantOfTrip, variantText } from './data.js';
 // USCITE E RIENTRI IN DEPOSITO
 // Una "tabella" (turno macchina) è l'insieme delle corse che fa lo stesso bus nella giornata.
 // Ogni serie di corse di servizio (separata da collegamenti col deposito o da pause di oltre un'ora)
@@ -415,6 +416,11 @@ export async function openTabella(b, highlightTrip) {
   });
   const curRow = document.querySelector('.tb-cols .tb-cur');
   if (curRow) setTimeout(() => curRow.scrollIntoView({ block: 'center' }), 100);
+  // corse con percorso diverso dal solito (deviate da tabella, scolastiche…)
+  document.querySelectorAll('.tb-cols [data-st]').forEach(async (cell) => {
+    const vr = await variantOfTrip(cell.dataset.st);
+    if (vr && cell.isConnected) { cell.classList.add('tb-var'); cell.insertAdjacentHTML('beforeend', `<small class="tb-vtxt">↪ ${esc(variantText(vr))}</small>`); }
+  });
 }
 
 export function onVehicles() { if (C && C.state.view?.type === 'rientri') render(); }

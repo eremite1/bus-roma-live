@@ -13,7 +13,7 @@ import { initMonopattini, toggleScooters, scooterState, scooterOption } from './
 import { initPreferiti, openPreferiti, openTurno, favBtn } from './preferiti.js';
 import { initRientri, ghostInfo, loadBlocks as loadBlocksR, openRientri, onVehicles as rientriUpdate, tabellaText, openTabella, blockOf, tripsOf as tripsOfR, nameKey as nameKeyR, tabName as tabNameR } from './rientri.js';
 import { GpsSource, EstimatedSource, findTransitousTrip, distance, ROME_BOUNDS } from './vehicles.js';
-import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE } from './data.js';
+import { store, loadRoutes, loadTrips, loadShapes, loadLineStops, colorOf, kindOf, niceName, PALETTE, loadVariants, variantOfTrip, variantText } from './data.js';
 
 const C = window.CONFIG;
 // nell'app Android: vibrazione tramite il telefono
@@ -610,7 +610,28 @@ function showVehicle(v) {
   $('showLineBtn').onclick = () => showLine(v.line);
   showPoint([v.lng, v.lat], map.getZoom());
   tabellaText(v).then((t) => { const el = document.getElementById('vehTab'); if (el) el.innerHTML = t; });
+  if (v.tripId) variantOfTrip(v.tripId).then((vr) => {
+    if (!vr || state.view?.type !== 'vehicle' || state.view.id !== v.id) return;
+    const el = document.getElementById('vehTab');
+    if (el) el.insertAdjacentHTML('afterend', `<div class="facts var-note">↪ <b>Corsa con percorso diverso</b>: ${esc(variantText(vr))}</div>`);
+  });
   loadTripFor(v);
+}
+
+// corsa con percorso diverso (deviata da tabella, scolastica…): disegno e fermate dai nostri dati
+async function drawVariantTrip(v, box) {
+  const vr = v.tripId ? await variantOfTrip(v.tripId) : null;
+  if (!vr || state.view?.type !== 'vehicle' || state.view.id !== v.id) return false;
+  const color = colorOf(v);
+  const pts = decodePolyline(vr.p, 5);
+  const extra = new Set(vr.x || []);
+  if (box) box.innerHTML = `<p class="muted">Orari di questa corsa non disponibili: ecco il suo percorso (in grassetto le fermate fuori dal percorso solito).</p>
+    <ol class="timeline" style="--c:${color}">${(vr.s || []).map((x) => `<li>${extra.has(x[2]) ? `<b>${esc(niceName(x[2]))}</b>` : `<span>${esc(niceName(x[2]))}</span>`}</li>`).join('')}</ol>`;
+  map.getSource('route').setData({ type: 'FeatureCollection', features: [
+    { type: 'Feature', geometry: { type: 'LineString', coordinates: pts }, properties: { color } },
+    ...(vr.s || []).map((x) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [x[0], x[1]] }, properties: { color } })),
+  ] });
+  return true;
 }
 
 async function loadTripFor(v) {
@@ -622,6 +643,7 @@ async function loadTripFor(v) {
     if (state.view?.type !== 'vehicle' || state.view.id !== v.id) return;
     renderTripStops(it, colorOf(v), box(), v);
   } catch (e) {
+    if (await drawVariantTrip(v, box())) return;
     if (box()) box().innerHTML = '<p class="muted">Orari di questa corsa non disponibili al momento.</p>';
   }
 }
@@ -898,6 +920,10 @@ async function setLine(name, dir = null) {
   if (state.lineFilter !== name) return;
   const routeIds = Object.entries(store.routes || {}).filter(([, r]) => String(r.n).toLowerCase() === name.toLowerCase()).map(([id]) => id);
   state.lineShapes = routeIds.flatMap((rid) => (store.shapes[rid] || []).map((sh) => ({ ...sh, rid, pts: decodePolyline(sh.p, 5) })));
+  // percorsi diversi dal solito (deviate da tabella, scolastiche…): disegnati più chiari
+  const vars = await Promise.all(routeIds.map((rid) => loadVariants(rid).then((o) => Object.values(o).map((sh) => ({ ...sh, rid, variant: true, pts: decodePolyline(sh.p, 5) })))));
+  if (state.lineFilter !== name) return;
+  state.lineShapes.push(...vars.flat());
   if (dir == null && state.lineShapes.length) dir = state.lineShapes[0].d;
   state.lineDir = dir;
   drawLineShape();
@@ -917,7 +943,8 @@ function lineColor() {
 function drawLineShape() {
   const color = lineColor();
   const feats = state.lineShapes.filter((sh) => state.lineDir == null || sh.d === state.lineDir)
-    .map((sh) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: sh.pts }, properties: { color, op: 0.9 } }));
+    .sort((a, b) => !!b.variant - !!a.variant)  // le varianti sotto, il percorso solito sopra
+    .map((sh) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: sh.pts }, properties: { color, op: sh.variant ? 0.35 : 0.9 } }));
   map.getSource('route') && map.getSource('route').setData({ type: 'FeatureCollection', features: feats });
   return feats;
 }
@@ -968,7 +995,7 @@ function renderLineView() {
       <div class="when">${when}</div></li>`;
   };
   const rows = vehicles.map(row).join('');
-  const tabs = state.lineShapes.map((sh) => {
+  const tabs = state.lineShapes.filter((sh) => !sh.variant).map((sh) => {
     const n = all.filter((v) => vDir(v) === sh.d).length;
     return `<button class="dir-tab${sh.d === state.lineDir ? ' on' : ''}" data-d="${sh.d}">verso <b>${esc(sh.h || 'capolinea')}</b><span>${n}</span></button>`;
   }).join('');
