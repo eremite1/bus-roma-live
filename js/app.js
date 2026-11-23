@@ -1716,7 +1716,9 @@ $('driverChip').onclick = () => {
 };
 
 // ---------------- navigatore ----------------
-initNav({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf });
+initNav({ map, state, store, loadShapes, loadLineStops, openSheet, closeSheet, toast, colorOf,
+  delayOf: (v) => { const t = state.delays && v.tripId && state.delays.get(v.tripId); if (t && t.delay != null) return t.delay;
+    const a = state.atac; const x = a && ((v.tripId && a.byTrip.get(v.tripId)) || (v.source === 'gps' && a.byVehicle.get(String(v.id).slice(1)))); return x && x.delay != null ? x.delay : null; } });
 $('navBtn').onclick = () => { hideSuggest(); openNavPicker(); };
 
 // ---------------- quello che è aperto resta aperto ----------------

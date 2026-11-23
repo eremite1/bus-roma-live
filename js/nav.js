@@ -132,7 +132,7 @@ function lineOptions(linea) {
 
 // Navigatore di una corsa precisa (dalla modalità autista): stesso percorso della corsa,
 // anche se è una deviata da tabella o una scolastica.
-export async function startNavTrip(tripId, linea) {
+export async function startNavTrip(tripId, linea, myNo) {
   await C.loadShapes();
   await C.loadLineStops();
   const ti = tripInfo(tripId);
@@ -144,7 +144,7 @@ export async function startNavTrip(tripId, linea) {
   }
   if (!opt) opt = lineOptions(linea).find((o) => o.routeId === ti.routeId && o.d === ti.dir) || lineOptions(linea).find((o) => o.d === ti.dir);
   if (!opt) { openNavPicker(linea); return; }
-  startNav(linea, opt, false);
+  startNav(linea, opt, false, { myNo, dir: ti.dir });
 }
 
 // ---------------- schermata di scelta ----------------
@@ -207,7 +207,7 @@ ${pts.map((p) => `<trkpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}"/>`).j
 // ---------------- navigazione ----------------
 let nav = null;
 
-function startNav(linea, opt, simulate) {
+function startNav(linea, opt, simulate, extra = {}) {
   const route = buildRoute(decodePolyline(opt.p, 5));
   const turns = detectTurns(route);
   // fermate proiettate sul percorso, in ordine
@@ -227,6 +227,7 @@ function startNav(linea, opt, simulate) {
     linea, head: opt.h, route, turns, stops, color, simulate,
     along: 0, lastIdx: 0, speed: 9, follow: true, offRoute: false, offSince: 0,
     said: new Set(), nextStopSaid: -1, watchId: null, timer: null, lastFix: 0, started: Date.now(),
+    myNo: extra.myNo || null, dir: extra.dir ?? opt.d, busTimer: null,
   };
   C.closeSheet();
   document.body.classList.add('navigating');
@@ -251,6 +252,44 @@ function startNav(linea, opt, simulate) {
     nav.watchId = navigator.geolocation.watchPosition(onFix, () => C.toast('Non ricevo il GPS: controlla i permessi'), { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
   }
   update();
+  refreshBuses();
+  nav.busTimer = setInterval(refreshBuses, 5000);
+}
+
+// ---------------- gli altri autobus e i miei dati ----------------
+const delayColor = (d) => (d == null ? '#5B6473' : d <= -2 ? '#1D5FD1' : d >= 6 ? '#C62828' : d >= 2 ? '#B85C00' : '#0E7A43');
+const delayLab = (d) => (d == null ? '' : Math.abs(d) < 1 ? 'in orario' : (d > 0 ? '+' : '−') + Math.abs(Math.round(d)) + ' min');
+function refreshBuses() {
+  if (!nav) return;
+  const feats = [];
+  const L = String(nav.linea).toLowerCase();
+  let mine = null;
+  for (const { v } of (C.state.shown || new Map()).values()) {
+    if (v.lng == null || v.spento) continue;
+    if (nav.myNo && String(v.vehicleNo) === String(nav.myNo)) { mine = v; continue; }
+    const same = String(v.line).toLowerCase() === L;
+    const p = { same: same ? 1 : 0, line: String(v.line || '') };
+    if (same) {
+      const d = C.delayOf ? C.delayOf(v) : null;
+      const opposite = v.dir != null && nav.dir != null && v.dir !== nav.dir;
+      Object.assign(p, { c: nav.color, o: opposite ? 0.55 : 1, tc: delayColor(d),
+        lab: `${v.vehicleNo}${d != null ? ' · ' + delayLab(d) : ''}${opposite ? ' ↩' : ''}` });
+      if (v.bearing != null) p.b = v.bearing;
+    }
+    feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: p });
+  }
+  const src = C.map.getSource('nav-bus');
+  if (src) src.setData({ type: 'FeatureCollection', features: feats });
+  // i dati del mio autobus nel riquadro in basso
+  const el = document.getElementById('navMine');
+  if (el) {
+    if (!nav.myNo) el.hidden = true;
+    else {
+      const d = mine && C.delayOf ? C.delayOf(mine) : null;
+      el.hidden = false;
+      el.innerHTML = `Vettura <b>${esc(nav.myNo)}</b>${mine ? (d != null ? ` · <b style="color:${delayColor(d)}">${d <= -1 ? 'anticipo ' + Math.abs(Math.round(d)) + ' min' : d >= 1 ? 'ritardo ' + Math.round(d) + ' min' : 'in orario'}</b>` : ' · orario n.d.') : ' · non trasmette'}`;
+    }
+  }
 }
 
 function onFix(pos) {
@@ -359,6 +398,7 @@ function buildOverlay() {
     <div class="nav-bottom">
       <div class="nav-info">
         <div class="nav-line"><span class="badge" style="background:${nav.color}">${esc(nav.linea)}</span> <span>verso ${esc(nav.head || '')}</span> ${nav.simulate ? '<span class="nav-sim">PROVA</span>' : ''}</div>
+        <div class="nav-mine" id="navMine" hidden></div>
         <div class="nav-stop" id="navStop"></div>
         <div class="muted" id="navRemain"></div>
       </div>
@@ -405,6 +445,14 @@ export function setupNavLayers(map) {
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0], 'fill-extrusion-opacity': 0.85 } }, map.getLayer('route-casing') ? 'route-casing' : undefined);
   }
   map.addSource('nav', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  // altri autobus durante la guida: tutti piccoli e sbiaditi (sotto il percorso), quelli della mia linea più evidenti
+  map.addSource('nav-bus', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'nav-bus-all', type: 'circle', source: 'nav-bus', filter: ['==', ['get', 'same'], 0], layout: { visibility: 'none' },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 1.8, 17, 4], 'circle-color': '#7A8496', 'circle-opacity': 0.75,
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 0.8 } });
+  map.addLayer({ id: 'nav-bus-all-label', type: 'symbol', source: 'nav-bus', filter: ['==', ['get', 'same'], 0], minzoom: 15,
+    layout: { visibility: 'none', 'text-field': ['get', 'line'], 'text-font': ['Noto Sans Bold'], 'text-size': 9.5, 'text-offset': [0, -1.1], 'text-allow-overlap': false },
+    paint: { 'text-color': '#5B6473', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } });
   const line = ['==', ['geometry-type'], 'LineString'];
   map.addLayer({ id: 'nav-casing', type: 'line', source: 'nav', filter: line, layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' },
     paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 8, 18, 26] } });
@@ -428,10 +476,22 @@ export function setupNavLayers(map) {
   g.beginPath(); g.moveTo(W / 2, 10); g.lineTo(W / 2 + 16, W - 14); g.lineTo(W / 2, W - 22); g.lineTo(W / 2 - 16, W - 14); g.closePath();
   g.fillStyle = NAV_COLOR; g.fill();
   map.addImage('nav-me', { width: W, height: W, data: g.getImageData(0, 0, W, W).data }, { pixelRatio: 2 });
+  // vetture della mia linea: pallino col colore della linea, freccia della direzione, numero e ritardo
+  const same = ['==', ['get', 'same'], 1];
+  map.addLayer({ id: 'nav-bus-line', type: 'circle', source: 'nav-bus', filter: same, layout: { visibility: 'none' },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 17, 9], 'circle-color': ['get', 'c'], 'circle-opacity': ['get', 'o'],
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+  map.addLayer({ id: 'nav-bus-line-arrow', type: 'symbol', source: 'nav-bus', filter: ['all', same, ['has', 'b']],
+    layout: { visibility: 'none', 'text-field': '▲', 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 12, 7, 17, 11],
+      'text-rotate': ['get', 'b'], 'text-rotation-alignment': 'map', 'text-pitch-alignment': 'map', 'text-allow-overlap': true },
+    paint: { 'text-color': '#fff' } });
+  map.addLayer({ id: 'nav-bus-line-label', type: 'symbol', source: 'nav-bus', filter: same,
+    layout: { visibility: 'none', 'text-field': ['get', 'lab'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-allow-overlap': true },
+    paint: { 'text-color': ['get', 'tc'], 'text-halo-color': '#fff', 'text-halo-width': 2, 'text-opacity': ['get', 'o'] } });
   map.addLayer({ id: 'nav-me', type: 'symbol', source: 'nav', filter: ['==', ['get', 'me'], 1],
     layout: { visibility: 'none', 'icon-image': 'nav-me', 'icon-rotate': ['get', 'b'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-size': 1.25 } });
 }
-const NAV_LAYERS = ['nav-buildings', 'nav-casing', 'nav-line', 'nav-chevrons', 'nav-turns', 'nav-stops', 'nav-stops-label', 'nav-me'];
+const NAV_LAYERS = ['nav-buildings', 'nav-bus-all', 'nav-bus-all-label', 'nav-casing', 'nav-line', 'nav-chevrons', 'nav-turns', 'nav-stops', 'nav-stops-label', 'nav-bus-line', 'nav-bus-line-arrow', 'nav-bus-line-label', 'nav-me'];
 function setNavLayers(on) {
   for (const id of NAV_LAYERS) if (C.map.getLayer(id)) C.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   // durante la guida nascondo gli altri mezzi e le fermate generiche: meno confusione
@@ -450,6 +510,7 @@ document.addEventListener('visibilitychange', () => { if (nav && !document.hidde
 export function stopNav() {
   if (!nav) return;
   clearInterval(nav.timer);
+  clearInterval(nav.busTimer);
   if (nav.watchId != null) navigator.geolocation.clearWatch(nav.watchId);
   C.map.off('dragstart', onUserMove);
   nav = null;

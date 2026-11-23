@@ -296,7 +296,7 @@ function navCorsa(me, myAt) {
   }
   if (!tid) { C.openNavPicker(me.line); return; }
   const linea = trips ? (trips.find((t) => t[0] === tid) || [])[3] || me.line : me.line;
-  C.startNavTrip(tid, linea);
+  C.startNavTrip(tid, linea, me.vehicleNo);
 }
 
 const p2 = (n) => String(n).padStart(2, '0');

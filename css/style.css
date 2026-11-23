@@ -526,3 +526,4 @@ body.navigating .top, body.navigating .fabs, body.navigating .sheet, body.naviga
 .tb-cell.tb-var { border-left: 3px solid #F06A00; }
 .tb-vtxt { display: block; color: #A35A00; font-weight: 700; font-size: 11px; }
 .var-note { color: #A35A00; }
+.nav-mine { font-size: 14px; margin-top: 6px; }
